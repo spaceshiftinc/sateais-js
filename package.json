@@ -1,0 +1,48 @@
+{
+  "name": "@sateais/sdk",
+  "version": "0.1.0",
+  "description": "SateAIs REST API JavaScript/TypeScript SDK — SAR衛星画像の検出ジョブ投入・結果取得",
+  "license": "MIT",
+  "author": "Spaceshift Inc.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "keywords": [
+    "sateais",
+    "sentinel-1",
+    "sar",
+    "satellite",
+    "geojson",
+    "ship-detection",
+    "oilslick",
+    "sdk"
+  ],
+  "publishConfig": {
+    "access": "restricted"
+  }
+}
