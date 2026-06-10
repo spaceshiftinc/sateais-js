@@ -7,8 +7,6 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpApiClient, parseJsonSafe } from "../src/http";
-import type { HttpApiClientConfig } from "../src/http";
 import {
   AuthenticationError,
   InsufficientCreditsError,
@@ -18,6 +16,8 @@ import {
   SateaisError,
   ValidationError,
 } from "../src/errors";
+import { HttpApiClient, parseJsonSafe } from "../src/http";
+import type { HttpApiClientConfig } from "../src/http";
 
 /** テスト用の最小 Response モックを生成する */
 const makeResponse = (
@@ -211,14 +211,14 @@ describe("HttpApiClient: リトライと指数バックオフ", () => {
   });
 
   it("4xx（VALIDATION_ERROR）は即時失敗しリトライしない", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        makeResponse(
-          400,
-          JSON.stringify({ error: { code: "VALIDATION_ERROR", message: "bad" } }),
-        ),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse(
+        400,
+        JSON.stringify({
+          error: { code: "VALIDATION_ERROR", message: "bad" },
+        }),
+      ),
+    );
     const client = makeClient(fetchMock);
 
     await expect(client.getJob("j1")).rejects.toBeInstanceOf(ValidationError);

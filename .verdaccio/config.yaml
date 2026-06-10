@@ -1,0 +1,37 @@
+# CI 専用の使い捨て Verdaccio 設定。
+# develop マージ時に publish→install→import スモークを回すためだけに使う。
+# 認証は不要（匿名 publish を許可）。本番レジストリでは絶対に使わないこと。
+
+storage: /tmp/verdaccio/storage
+
+# 認証は無効化（匿名アクセスを許可するためのプレースホルダ）。
+auth:
+  htpasswd:
+    file: /tmp/verdaccio/htpasswd
+    # アカウント登録は不要（匿名で publish させる）
+    max_users: -1
+
+# @sateais/* は匿名で publish / install できる。それ以外は npm 公式へプロキシ。
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+
+packages:
+  "@sateais/*":
+    access: $all
+    publish: $anonymous
+    unpublish: $anonymous
+  "@*/*":
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+  "**":
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+
+# CI ログを静かに保つ
+log:
+  type: stdout
+  format: pretty
+  level: warn

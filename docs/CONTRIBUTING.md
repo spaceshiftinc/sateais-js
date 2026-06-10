@@ -4,7 +4,7 @@
 
 ## 開発環境セットアップ
 
-Node.js 18+ と `npm` を使用します（`.nvmrc` / `package.json` の `engines` でバージョン固定）。
+Node.js 18+ と `npm` を使用します（`package.json` の `engines` でバージョン固定）。
 
 ```bash
 git clone git@github.com:spaceshiftinc/sateais-js.git
