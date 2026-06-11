@@ -2,6 +2,7 @@
 # package.json の version が npm 上に未存在のときだけ publish（再公開ガード）。
 # 据え置きのままなら publish をスキップし、二重公開を防ぐ。
 name: Release
+run-name: Release → npm (${{ github.ref_name }})
 
 on:
   push:
