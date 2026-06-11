@@ -3,7 +3,7 @@
 [日本語](./README.md) | **English**
 
 The official JavaScript / TypeScript SDK for SateAIs. It provides async/await
-programmatic access to the SAR satellite image detection APIs (ship detection,
+programmatic access to the SAR satellite image analysis APIs (ship detection,
 oil slick detection, new / disappeared building detection, and time-series change
 detection). The currently supported satellite is Sentinel-1, with additional
 satellites planned in future releases.
