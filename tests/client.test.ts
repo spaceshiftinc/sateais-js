@@ -8,8 +8,12 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "../src/client";
+import {
+  AuthenticationError,
+  JobFailedError,
+  JobTimeoutError,
+} from "../src/errors";
 import type { ApiClient } from "../src/http";
-import { AuthenticationError, JobFailedError, JobTimeoutError } from "../src/errors";
 import type {
   GeoJSONResponse,
   JobCreateResponse,
@@ -80,7 +84,10 @@ describe("Client: HTTP 配線（fetch モック）", () => {
   });
 
   it("baseUrl の既定値が使われる", async () => {
-    const client = new Client({ apiKey: "k", fetch: fetchMock as unknown as typeof fetch });
+    const client = new Client({
+      apiKey: "k",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
     await client.jobs.status("j1");
     expect(fetchMock.mock.calls[0][0]).toBe(
       "https://api.spcsft.com/api/v1/jobs/j1",
@@ -98,7 +105,10 @@ describe("Client: HTTP 配線（fetch モック）", () => {
   });
 
   it("Bearer ヘッダに apiKey が載る", async () => {
-    const client = new Client({ apiKey: "sk_live_xyz", fetch: fetchMock as unknown as typeof fetch });
+    const client = new Client({
+      apiKey: "sk_live_xyz",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
     await client.jobs.status("j1");
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(
       "Bearer sk_live_xyz",
@@ -189,8 +199,13 @@ describe("検出メソッド（Fake ApiClient）", () => {
   });
 
   it("satellite_id を明示指定するとそれが尊重される", async () => {
-    await client.ship.detect({ scene_id: "S1A_zzz", satellite_id: "sentinel-1" });
-    expect(fake.submitDetection.mock.calls[0][1].satellite_id).toBe("sentinel-1");
+    await client.ship.detect({
+      scene_id: "S1A_zzz",
+      satellite_id: "sentinel-1",
+    });
+    expect(fake.submitDetection.mock.calls[0][1].satellite_id).toBe(
+      "sentinel-1",
+    );
   });
 
   it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
@@ -278,7 +293,9 @@ describe("JobsResource.wait（fake timers）", () => {
       }),
     );
 
-    const promise = client.jobs.wait("j1", { intervalMs: 1_000 }).catch((e: unknown) => e);
+    const promise = client.jobs
+      .wait("j1", { intervalMs: 1_000 })
+      .catch((e: unknown) => e);
     await vi.runAllTimersAsync();
     const err = await promise;
 

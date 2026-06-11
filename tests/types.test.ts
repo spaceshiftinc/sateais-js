@@ -7,8 +7,8 @@
 
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { Client } from "../src/client";
-import type { ApiClient } from "../src/http";
 import { ValidationError } from "../src/errors";
+import type { ApiClient } from "../src/http";
 import type {
   DetectionEndpoint,
   GeoJSONResponse,
@@ -102,7 +102,9 @@ describe("型: public API の判別・戻り値型", () => {
 
   it("検出メソッドの戻り値は Promise<JobCreateResponse>", () => {
     const client = new Client({ apiClient: new FakeApiClient() });
-    expectTypeOf(client.ship.detect).returns.resolves.toEqualTypeOf<JobCreateResponse>();
+    expectTypeOf(
+      client.ship.detect,
+    ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
     expectTypeOf(
       client.newbuilding.detect,
     ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
@@ -110,15 +112,23 @@ describe("型: public API の判別・戻り値型", () => {
 
   it("jobs.status / result / wait の戻り値型", () => {
     const client = new Client({ apiClient: new FakeApiClient() });
-    expectTypeOf(client.jobs.status).returns.resolves.toEqualTypeOf<JobStatusResponse>();
-    expectTypeOf(client.jobs.result).returns.resolves.toEqualTypeOf<GeoJSONResponse>();
-    expectTypeOf(client.jobs.wait).returns.resolves.toEqualTypeOf<GeoJSONResponse>();
+    expectTypeOf(
+      client.jobs.status,
+    ).returns.resolves.toEqualTypeOf<JobStatusResponse>();
+    expectTypeOf(
+      client.jobs.result,
+    ).returns.resolves.toEqualTypeOf<GeoJSONResponse>();
+    expectTypeOf(
+      client.jobs.wait,
+    ).returns.resolves.toEqualTypeOf<GeoJSONResponse>();
   });
 
   it("ship.detect は scene_id 単独・polygon+date の双方を受け付ける", () => {
     const client = new Client({ apiClient: new FakeApiClient() });
     expectTypeOf(client.ship.detect)
       .parameter(0)
-      .toMatchTypeOf<{ scene_id: string } | { polygon: string; date: string }>();
+      .toMatchTypeOf<
+        { scene_id: string } | { polygon: string; date: string }
+      >();
   });
 });

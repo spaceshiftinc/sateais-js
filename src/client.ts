@@ -169,9 +169,12 @@ export class JobsResource {
    * @param options ポーリング間隔・タイムアウト・コールバック
    * @returns 完了したジョブの結果 GeoJSON
    */
-  async wait(jobId: string, options: WaitOptions = {}): Promise<GeoJSONResponse> {
+  async wait(
+    jobId: string,
+    options: WaitOptions = {},
+  ): Promise<GeoJSONResponse> {
     const intervalMs = options.intervalMs ?? 60_000;
-    const timeoutMs = options.timeoutMs ?? Infinity;
+    const timeoutMs = options.timeoutMs ?? Number.POSITIVE_INFINITY;
     const start = Date.now();
 
     for (;;) {
@@ -189,7 +192,10 @@ export class JobsResource {
         });
       }
 
-      if (timeoutMs !== Infinity && Date.now() - start + intervalMs >= timeoutMs) {
+      if (
+        timeoutMs !== Number.POSITIVE_INFINITY &&
+        Date.now() - start + intervalMs >= timeoutMs
+      ) {
         throw new JobTimeoutError({ jobId, timeoutMs });
       }
 
