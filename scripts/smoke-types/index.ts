@@ -1,8 +1,8 @@
 // 型解決スモーク: install 済みの @sateais/sdk の型定義が解決でき、
 // public な型・値が期待どおりの形であることを tsc でコンパイルして検証する。
 import {
+  type AnalysisEndpoint,
   Client,
-  type DetectionEndpoint,
   type JobStatusResponse,
   SateaisApiError,
   SateaisError,
@@ -13,7 +13,7 @@ const client: Client = new Client({ apiKey: "test" });
 void client;
 
 // 公開型が解決され、リテラルが型に適合すること
-const endpoint: DetectionEndpoint = "ship";
+const endpoint: AnalysisEndpoint = "ship";
 void endpoint;
 
 // レスポンス型のフィールド型が解決されること（status は文字列リテラル合併）

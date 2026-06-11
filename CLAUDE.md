@@ -30,7 +30,7 @@ src/
 ├── types.ts       # エンティティ + 検出リクエスト/レスポンス型
 ├── errors.ts      # 例外階層
 ├── http.ts        # ApiClient interface + HttpApiClient（唯一の I/O 抽象境界）
-├── client.ts      # Client + Detection（検出）+ Jobs（ユーザー向けファサード）
+├── client.ts      # Client + Analysis（検出）+ Jobs（ユーザー向けファサード）
 ```
 
 ### 依存方向（厳守）
@@ -64,7 +64,7 @@ src/
 export {
   Client,
   // 型
-  type DetectionEndpoint,
+  type AnalysisEndpoint,
   type JobCreateResponse,
   type JobStatusResponse,
   type GeoJSONResponse,
@@ -87,10 +87,10 @@ export {
 
 ### 新エンドポイントを追加する
 
-1. `types.ts` の `DetectionEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
+1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）を追加
-3. `client.ts` の `Client` に検出メソッド（`client.<name>.detect()`）を追加
-4. テスト追加（`types` の検証 + `client` の `detect()`）
+3. `client.ts` の `Client` に検出メソッド（`client.<name>.analyze()`）を追加
+4. テスト追加（`types` の検証 + `client` の `analyze()`）
 
 ### HTTP レスポンス形式が変わった
 
@@ -141,7 +141,7 @@ npm run test:coverage    # カバレッジ計測（v8、目安 statements 80%）
 
 - public シンボルの **削除・改名は禁止**（deprecation 経由のみ）
 - メソッド引数の追加はオプション引数（options オブジェクトのフィールド追加）で
-- `DetectionEndpoint` の値（文字列）は API 契約と一致させる
+- `AnalysisEndpoint` の値（文字列）は API 契約と一致させる
 - 例外クラスの継承関係は SemVer メジャー以外で変更しない
 - `ApiClient` interface へのメソッド追加（破壊的変更）はメジャー以外禁止
 

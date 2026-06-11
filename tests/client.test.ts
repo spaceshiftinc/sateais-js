@@ -32,7 +32,7 @@ const makeResponse = (status: number, body: string): Response =>
 
 /** Fake ApiClient（HTTP を完全排除） */
 class FakeApiClient implements ApiClient {
-  submitDetection = vi.fn<ApiClient["submitDetection"]>();
+  submitAnalysis = vi.fn<ApiClient["submitAnalysis"]>();
   getJob = vi.fn<ApiClient["getJob"]>();
   getJobResult = vi.fn<ApiClient["getJobResult"]>();
 }
@@ -163,13 +163,13 @@ describe("検出メソッド（Fake ApiClient）", () => {
 
   beforeEach(() => {
     fake = new FakeApiClient();
-    fake.submitDetection.mockResolvedValue(JOB_CREATE);
+    fake.submitAnalysis.mockResolvedValue(JOB_CREATE);
     client = new Client({ apiClient: fake });
   });
 
-  it("ship: scene_id パターンのボディを POST /detect/ship 相当に送る", async () => {
-    const res = await client.ship.detect({ scene_id: "S1A_IW_GRDH_xxx" });
-    expect(fake.submitDetection).toHaveBeenCalledWith("ship", {
+  it("ship: scene_id パターンのボディを POST /analyze/ship 相当に送る", async () => {
+    const res = await client.ship.analyze({ scene_id: "S1A_IW_GRDH_xxx" });
+    expect(fake.submitAnalysis).toHaveBeenCalledWith("ship", {
       scene_id: "S1A_IW_GRDH_xxx",
       satellite_id: "sentinel-1",
     });
@@ -177,12 +177,12 @@ describe("検出メソッド（Fake ApiClient）", () => {
   });
 
   it("ship: polygon + date パターンのボディを送る", async () => {
-    await client.ship.detect({
+    await client.ship.analyze({
       polygon: "POLYGON((0 0,1 0,1 1,0 0))",
       date: "2026-01-10",
       date_direction: "nearest",
     });
-    expect(fake.submitDetection).toHaveBeenCalledWith("ship", {
+    expect(fake.submitAnalysis).toHaveBeenCalledWith("ship", {
       polygon: "POLYGON((0 0,1 0,1 1,0 0))",
       date: "2026-01-10",
       date_direction: "nearest",
@@ -190,20 +190,20 @@ describe("検出メソッド（Fake ApiClient）", () => {
     });
   });
 
-  it("oilslick: scene_id パターンで /detect/oilslick に送る", async () => {
-    await client.oilslick.detect({ scene_id: "S1A_yyy" });
-    expect(fake.submitDetection).toHaveBeenCalledWith("oilslick", {
+  it("oilslick: scene_id パターンで /analyze/oilslick に送る", async () => {
+    await client.oilslick.analyze({ scene_id: "S1A_yyy" });
+    expect(fake.submitAnalysis).toHaveBeenCalledWith("oilslick", {
       scene_id: "S1A_yyy",
       satellite_id: "sentinel-1",
     });
   });
 
   it("satellite_id を明示指定するとそれが尊重される", async () => {
-    await client.ship.detect({
+    await client.ship.analyze({
       scene_id: "S1A_zzz",
       satellite_id: "sentinel-1",
     });
-    expect(fake.submitDetection.mock.calls[0][1].satellite_id).toBe(
+    expect(fake.submitAnalysis.mock.calls[0][1].satellite_id).toBe(
       "sentinel-1",
     );
   });
@@ -211,12 +211,12 @@ describe("検出メソッド（Fake ApiClient）", () => {
   it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
     "%s: polygon + date_start + date_end のボディを送る",
     async (endpoint) => {
-      await client[endpoint].detect({
+      await client[endpoint].analyze({
         polygon: "POLYGON((0 0,1 0,1 1,0 0))",
         date_start: "2026-01-01",
         date_end: "2026-02-01",
       });
-      expect(fake.submitDetection).toHaveBeenCalledWith(endpoint, {
+      expect(fake.submitAnalysis).toHaveBeenCalledWith(endpoint, {
         polygon: "POLYGON((0 0,1 0,1 1,0 0))",
         date_start: "2026-01-01",
         date_end: "2026-02-01",
@@ -226,7 +226,7 @@ describe("検出メソッド（Fake ApiClient）", () => {
   );
 
   it("レスポンスが JobCreateResponse として返る", async () => {
-    const res = await client.ship.detect({ scene_id: "S1A_xxx" });
+    const res = await client.ship.analyze({ scene_id: "S1A_xxx" });
     expect(res.job_id).toBe("j1");
     expect(res.status).toBe("pending");
   });
