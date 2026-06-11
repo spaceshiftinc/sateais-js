@@ -1,6 +1,7 @@
 # CI: feature/* → develop / main の PR・push で実行する品質ゲート。
 # 型・Lint・Format・ビルド・テスト・pack 同梱検証を Node 18/20 マトリクスで回す。
 name: CI
+run-name: CI(${{ github.head_ref || github.ref_name }})
 
 on:
   pull_request:

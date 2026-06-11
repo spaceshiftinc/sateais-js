@@ -14,13 +14,13 @@ import {
 import { HttpApiClient } from "./http";
 import type { ApiClient } from "./http";
 import type {
-  DetectionEndpoint,
+  AnalysisEndpoint,
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
   PolygonPeriodParams,
   SatelliteId,
-  SceneDetectParams,
+  SceneAnalyzeParams,
 } from "./types";
 
 /** 既定のベース URL */
@@ -66,10 +66,10 @@ const sleep = (ms: number): Promise<void> =>
 /**
  * scene_id / polygon+date パターンの検出リソース（ship / oilslick）
  */
-export class SceneDetectionResource {
+export class SceneAnalysisResource {
   constructor(
     private readonly api: ApiClient,
-    private readonly endpoint: Extract<DetectionEndpoint, "ship" | "oilslick">,
+    private readonly endpoint: Extract<AnalysisEndpoint, "ship" | "oilslick">,
   ) {}
 
   /**
@@ -79,7 +79,7 @@ export class SceneDetectionResource {
    * @returns 投入されたジョブの情報（`job_id` を含む）
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
-  detect(params: SceneDetectParams): Promise<JobCreateResponse> {
+  analyze(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
     const hasScene = "scene_id" in params && !!params.scene_id;
     const hasPolygonDate =
       "polygon" in params && !!params.polygon && !!params.date;
@@ -87,10 +87,10 @@ export class SceneDetectionResource {
       throw new ValidationError({
         code: "VALIDATION_ERROR",
         status: 400,
-        message: `${this.endpoint}.detect requires either 'scene_id' or both 'polygon' and 'date'`,
+        message: `${this.endpoint}.analyze requires either 'scene_id' or both 'polygon' and 'date'`,
       });
     }
-    return this.api.submitDetection(this.endpoint, {
+    return this.api.submitAnalysis(this.endpoint, {
       ...params,
       satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
     });
@@ -100,11 +100,11 @@ export class SceneDetectionResource {
 /**
  * polygon + 期間パターンの検出リソース（newbuilding / disappearbuilding / timeseries）
  */
-export class PolygonPeriodDetectionResource {
+export class PolygonPeriodAnalysisResource {
   constructor(
     private readonly api: ApiClient,
     private readonly endpoint: Extract<
-      DetectionEndpoint,
+      AnalysisEndpoint,
       "newbuilding" | "disappearbuilding" | "timeseries"
     >,
   ) {}
@@ -116,15 +116,15 @@ export class PolygonPeriodDetectionResource {
    * @returns 投入されたジョブの情報（`job_id` を含む）
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
-  detect(params: PolygonPeriodParams): Promise<JobCreateResponse> {
+  analyze(params: PolygonPeriodParams): Promise<JobCreateResponse> {
     if (!params.polygon || !params.date_start || !params.date_end) {
       throw new ValidationError({
         code: "VALIDATION_ERROR",
         status: 400,
-        message: `${this.endpoint}.detect requires 'polygon', 'date_start', and 'date_end'`,
+        message: `${this.endpoint}.analyze requires 'polygon', 'date_start', and 'date_end'`,
       });
     }
-    return this.api.submitDetection(this.endpoint, {
+    return this.api.submitAnalysis(this.endpoint, {
       ...params,
       satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
     });
@@ -246,36 +246,36 @@ export interface ClientOptions {
  * @example
  * ```ts
  * const client = new Client({ apiKey: "sk_live_xxxxx" });
- * const job = await client.ship.detect({ scene_id: "S1A_IW_GRDH_..." });
+ * const job = await client.ship.analyze({ scene_id: "S1A_IW_GRDH_..." });
  * const geojson = await client.jobs.wait(job.job_id);
- * console.log(geojson.features.length, "ships detected");
+ * console.log(geojson.features.length, "ships found");
  * ```
  */
 export class Client {
   /** 船舶検出リソース。 */
-  readonly ship: SceneDetectionResource;
+  readonly ship: SceneAnalysisResource;
   /** オイルスリック検出リソース。 */
-  readonly oilslick: SceneDetectionResource;
+  readonly oilslick: SceneAnalysisResource;
   /** 新規建物検出リソース。 */
-  readonly newbuilding: PolygonPeriodDetectionResource;
+  readonly newbuilding: PolygonPeriodAnalysisResource;
   /** 消失建物検出リソース。 */
-  readonly disappearbuilding: PolygonPeriodDetectionResource;
+  readonly disappearbuilding: PolygonPeriodAnalysisResource;
   /** 時系列変化検出リソース。 */
-  readonly timeseries: PolygonPeriodDetectionResource;
+  readonly timeseries: PolygonPeriodAnalysisResource;
   /** ジョブ操作リソース（状態取得・結果取得・完了待ち）。 */
   readonly jobs: JobsResource;
 
   constructor(options: ClientOptions = {}) {
     const api = options.apiClient ?? Client.createHttpApiClient(options);
 
-    this.ship = new SceneDetectionResource(api, "ship");
-    this.oilslick = new SceneDetectionResource(api, "oilslick");
-    this.newbuilding = new PolygonPeriodDetectionResource(api, "newbuilding");
-    this.disappearbuilding = new PolygonPeriodDetectionResource(
+    this.ship = new SceneAnalysisResource(api, "ship");
+    this.oilslick = new SceneAnalysisResource(api, "oilslick");
+    this.newbuilding = new PolygonPeriodAnalysisResource(api, "newbuilding");
+    this.disappearbuilding = new PolygonPeriodAnalysisResource(
       api,
       "disappearbuilding",
     );
-    this.timeseries = new PolygonPeriodDetectionResource(api, "timeseries");
+    this.timeseries = new PolygonPeriodAnalysisResource(api, "timeseries");
     this.jobs = new JobsResource(api);
   }
 

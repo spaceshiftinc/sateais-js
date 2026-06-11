@@ -19,15 +19,15 @@ JS 版固有の方針:
 ```
 src/
 ├── index.ts       # public API の再エクスポート（エントリポイント）
-├── types.ts       # DetectionEndpoint, 検出パラメータ型, JobCreateResponse,
+├── types.ts       # AnalysisEndpoint, 検出パラメータ型, JobCreateResponse,
 │                  #   JobStatusResponse, GeoJSONResponse
 ├── errors.ts      # 例外階層
 ├── http.ts        # ApiClient interface + HttpApiClient（唯一の I/O 抽象境界）
-└── client.ts      # Client + Detection（検出）+ Jobs（ユーザー向けファサード）
+└── client.ts      # Client + Analysis（検出）+ Jobs（ユーザー向けファサード）
 ```
 
 検出（`client.ship` など）とジョブ操作（`client.jobs`）は `client.ts` に同居させ、
-`sateais-py` の `_client.py`（Client + Detect + Jobs）に倣ってファイル数を抑えています。
+`sateais-py` の `_client.py`（Client + Analyze + Jobs）に倣ってファイル数を抑えています。
 
 ## 依存方向
 
@@ -54,8 +54,8 @@ types.ts , errors.ts       (entities / exceptions, 外部依存なし)
 ```ts
 // http.ts
 export interface ApiClient {
-  submitDetection(
-    endpoint: DetectionEndpoint,
+  submitAnalysis(
+    endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse>;
   getJob(jobId: string): Promise<JobStatusResponse>;
@@ -107,10 +107,10 @@ export interface ApiClient {
 
 ## 新しいエンドポイントを追加する
 
-1. `types.ts` の `DetectionEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
+1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）が既存パターンで賄えるか確認
-3. `client.ts` の `Client` に検出メソッド（`client.<name>.detect()`）を追加
-4. `types` の検証テストと `client` の `detect()` テストを追加
+3. `client.ts` の `Client` に検出メソッド（`client.<name>.analyze()`）を追加
+4. `types` の検証テストと `client` の `analyze()` テストを追加
 
 ## HTTP レスポンス形式が変わった場合
 

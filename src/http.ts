@@ -17,8 +17,8 @@ import {
   ValidationError,
 } from "./errors";
 import type {
+  AnalysisEndpoint,
   ApiErrorEnvelope,
-  DetectionEndpoint,
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
@@ -31,9 +31,9 @@ import type {
  * HTTP 通信を完全に排除して検証できる。
  */
 export interface ApiClient {
-  /** 検出ジョブを投入する（`POST /detect/{endpoint}`）。 */
-  submitDetection(
-    endpoint: DetectionEndpoint,
+  /** 検出ジョブを投入する（`POST /analyze/{endpoint}`）。 */
+  submitAnalysis(
+    endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse>;
   /** ジョブの状態を取得する（`GET /jobs/{job_id}`）。 */
@@ -112,13 +112,13 @@ export class HttpApiClient implements ApiClient {
     this.config = config;
   }
 
-  submitDetection(
-    endpoint: DetectionEndpoint,
+  submitAnalysis(
+    endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse> {
     return this.request<JobCreateResponse>(
       "POST",
-      `/detect/${endpoint}`,
+      `/analyze/${endpoint}`,
       params,
     );
   }

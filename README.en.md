@@ -21,9 +21,9 @@ bundled type definitions (`.d.ts`). Runs on Node.js 18+ and modern browsers.
 import { Client } from "@sateais/sdk";
 
 const client = new Client({ apiKey: process.env.SATEAIS_API_KEY });
-const job = await client.ship.detect({ scene_id: "S1A_IW_GRDH_..." });
+const job = await client.ship.analyze({ scene_id: "S1A_IW_GRDH_..." });
 const result = await client.jobs.wait(job.job_id); // poll until completion
-console.log(result.features.length, "ships detected");
+console.log(result.features.length, "ships found");
 ```
 
 ## Authentication
@@ -48,22 +48,22 @@ If the API key cannot be resolved, an `AuthenticationError` is thrown.
 
 ## SDK
 
-### Detection methods
+### Analysis methods
 
 | Method | Input pattern |
 | --- | --- |
-| `client.ship.detect(...)` | `scene_id`, or `polygon`+`date` |
-| `client.oilslick.detect(...)` | Same as above |
-| `client.newbuilding.detect(...)` | `polygon`+`date_start`+`date_end` |
-| `client.disappearbuilding.detect(...)` | Same as above |
-| `client.timeseries.detect(...)` | Same as above |
+| `client.ship.analyze(...)` | `scene_id`, or `polygon`+`date` |
+| `client.oilslick.analyze(...)` | Same as above |
+| `client.newbuilding.analyze(...)` | `polygon`+`date_start`+`date_end` |
+| `client.disappearbuilding.analyze(...)` | Same as above |
+| `client.timeseries.analyze(...)` | Same as above |
 
 There are two input patterns:
 
 ```ts
 // scene_id family (ship / oilslick): scene ID, or polygon + a single date
-await client.ship.detect({ satellite_id: "sentinel-1", scene_id: "S1A_IW_GRDH_..." });
-await client.oilslick.detect({
+await client.ship.analyze({ satellite_id: "sentinel-1", scene_id: "S1A_IW_GRDH_..." });
+await client.oilslick.analyze({
   satellite_id: "sentinel-1",
   polygon: "POLYGON((...))",          // WKT
   date: "2026-05-01",
@@ -72,7 +72,7 @@ await client.oilslick.detect({
 });
 
 // polygon + date range family (newbuilding / disappearbuilding / timeseries)
-await client.timeseries.detect({
+await client.timeseries.analyze({
   satellite_id: "sentinel-1",
   polygon: "POLYGON((...))",          // WKT
   date_start: "2026-01-01",
@@ -98,7 +98,7 @@ const geojson = await client.jobs.wait(jobId, {
 });
 ```
 
-> Detection can take 30–60 minutes. The default poll interval of `jobs.wait` is
+> Analysis can take 30–60 minutes. The default poll interval of `jobs.wait` is
 > about 60 seconds accordingly.
 
 ### Exceptions
@@ -123,7 +123,7 @@ try {
   const result = await client.jobs.wait(job.job_id);
 } catch (err) {
   if (err instanceof JobFailedError) {
-    console.error("detection failed:", err.errorCode, err.errorMessage);
+    console.error("analysis failed:", err.errorCode, err.errorMessage);
   } else if (err instanceof RateLimitError) {
     console.error("rate limit reached");
   } else {

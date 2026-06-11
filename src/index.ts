@@ -6,8 +6,8 @@
 
 export {
   Client,
-  SceneDetectionResource,
-  PolygonPeriodDetectionResource,
+  SceneAnalysisResource,
+  PolygonPeriodAnalysisResource,
   JobsResource,
 } from "./client";
 export type { ClientOptions, WaitOptions } from "./client";
@@ -29,14 +29,14 @@ export {
 export type { ApiErrorOptions } from "./errors";
 
 export type {
-  DetectionEndpoint,
+  AnalysisEndpoint,
   SatelliteId,
   OrbitDirection,
   DateDirection,
   JobStatus,
   SceneIdInput,
   PolygonDateInput,
-  SceneDetectParams,
+  SceneAnalyzeParams,
   PolygonPeriodParams,
   JobCreateResponse,
   JobStatusResponse,

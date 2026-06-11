@@ -87,17 +87,17 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
     expect(init.headers["Content-Type"]).toBe("application/json");
   });
 
-  it("submitDetection は POST /detect/{endpoint} に JSON ボディを送る", async () => {
+  it("submitAnalysis は POST /analyze/{endpoint} に JSON ボディを送る", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(makeResponse(200, '{"job_id":"j1"}'));
     const client = makeClient(fetchMock);
 
     const body = { scene_id: "S1A_xxx", satellite_id: "sentinel-1" };
-    const res = await client.submitDetection("ship", body);
+    const res = await client.submitAnalysis("ship", body);
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://api.example.com/api/v1/detect/ship");
+    expect(url).toBe("https://api.example.com/api/v1/analyze/ship");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual(body);
     expect(res).toEqual({ job_id: "j1" });
