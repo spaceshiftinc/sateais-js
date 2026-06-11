@@ -59,7 +59,8 @@ jobs:
         run: |
           # 匿名 publish 用にダミートークンを設定（Verdaccio 側は $anonymous 許可）
           npm set //localhost:4873/:_authToken "ci-dummy-token"
-          npm publish --registry "$REGISTRY" --access public
+          # dev スナップショットはプレリリース版のため dist-tag を明示（latest を汚さない）
+          npm publish --registry "$REGISTRY" --access public --tag dev
 
       - name: Install from Verdaccio into a clean dir & smoke (ESM/CJS/types)
         run: |
