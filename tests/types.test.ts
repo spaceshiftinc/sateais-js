@@ -5,23 +5,16 @@
  * Vitest の `expectTypeOf` で静的に検証する。HTTP には一切触れない。
  */
 
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { Client } from "../src/client";
 import { ValidationError } from "../src/errors";
-import type { ApiClient } from "../src/http";
 import type {
   AnalysisEndpoint,
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
 } from "../src/types";
-
-/** submitAnalysis が呼ばれていないことを検証できる Fake */
-class FakeApiClient implements ApiClient {
-  submitAnalysis = vi.fn<ApiClient["submitAnalysis"]>();
-  getJob = vi.fn<ApiClient["getJob"]>();
-  getJobResult = vi.fn<ApiClient["getJobResult"]>();
-}
+import { FakeApiClient } from "./helpers";
 
 const makeClient = (): { client: Client; fake: FakeApiClient } => {
   const fake = new FakeApiClient();

@@ -13,29 +13,13 @@ import {
   JobFailedError,
   JobTimeoutError,
 } from "../src/errors";
-import type { ApiClient } from "../src/http";
 import type {
   GeoJSONResponse,
   JobCreateResponse,
   JobStatus,
   JobStatusResponse,
 } from "../src/types";
-
-/** テスト用の最小 Response モック */
-const makeResponse = (status: number, body: string): Response =>
-  ({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: "",
-    text: () => Promise.resolve(body),
-  }) as unknown as Response;
-
-/** Fake ApiClient（HTTP を完全排除） */
-class FakeApiClient implements ApiClient {
-  submitAnalysis = vi.fn<ApiClient["submitAnalysis"]>();
-  getJob = vi.fn<ApiClient["getJob"]>();
-  getJobResult = vi.fn<ApiClient["getJobResult"]>();
-}
+import { FakeApiClient, makeResponse } from "./helpers";
 
 /** ジョブステータスレスポンスのファクトリ */
 const jobStatus = (
