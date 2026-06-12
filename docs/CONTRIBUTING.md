@@ -94,6 +94,8 @@ CI ではこれら（型 / Lint / ビルド / テスト / `npm pack`）がすべ
 - HTTP を絡めるテストは、グローバル `fetch` を `vi.fn()` で差し替える（または MSW）
 - HTTP を絡めないテストは、`ApiClient` の Fake 実装を `Client` に注入する
 - `jobs.wait` のポーリングは Vitest の fake timers で制御する
+- 共通の Fake / モック（`FakeApiClient` / `makeResponse`）は [`tests/helpers.ts`](../tests/helpers.ts)
+  に集約してある。テストファイル内で再定義せず import して再利用する
 
 ## リリース手順
 

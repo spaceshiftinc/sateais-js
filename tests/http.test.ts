@@ -18,20 +18,7 @@ import {
 } from "../src/errors";
 import { HttpApiClient, parseJsonSafe } from "../src/http";
 import type { HttpApiClientConfig } from "../src/http";
-
-/** テスト用の最小 Response モックを生成する */
-const makeResponse = (
-  status: number,
-  body: string,
-  statusText = "",
-): Response => {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    statusText,
-    text: () => Promise.resolve(body),
-  } as unknown as Response;
-};
+import { makeResponse } from "./helpers";
 
 /** 既定設定の HttpApiClient を生成する（fetch のみ差し替え） */
 const makeClient = (
