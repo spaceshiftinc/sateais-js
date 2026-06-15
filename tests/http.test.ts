@@ -2,7 +2,7 @@
  * `http.ts`（HttpApiClient / parseJsonSafe）のユニットテスト
  *
  * グローバル `fetch` をモックし、実 API へは接続しない。Bearer / Content-Type の付与、
- * エラー envelope のマッピング、指数バックオフリトライ、タイムアウト（AbortController）、
+ * エラー envelope のマッピング、タイムアウト（AbortController）、
  * NaN を含むレスポンスの安全パースを検証する。
  */
 
@@ -29,9 +29,6 @@ const makeClient = (
     apiKey: "sk_test_abc",
     baseUrl: "https://api.example.com/api/v1",
     timeoutMs: 30_000,
-    maxRetries: 4,
-    retryInitialDelayMs: 1_000,
-    retryMaxDelayMs: 30_000,
     fetch: fetchImpl,
     ...overrides,
   });
@@ -139,8 +136,7 @@ describe("HttpApiClient: エラー envelope のマッピング", () => {
       const fetchMock = vi
         .fn()
         .mockResolvedValue(makeResponse(status, envelope(code, "msg here")));
-      // 429 はリトライ対象なので maxRetries:0 で即時失敗させる
-      const client = makeClient(fetchMock, { maxRetries: 0 });
+      const client = makeClient(fetchMock);
 
       const err = await client.getJob("j1").catch((e: unknown) => e);
       expect(err).toBeInstanceOf(ErrorClass);
@@ -155,7 +151,7 @@ describe("HttpApiClient: エラー envelope のマッピング", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(makeResponse(500, "Internal Server Error"));
-    const client = makeClient(fetchMock, { maxRetries: 0 });
+    const client = makeClient(fetchMock);
 
     const err = await client.getJob("j1").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SateaisApiError);
@@ -164,40 +160,24 @@ describe("HttpApiClient: エラー envelope のマッピング", () => {
   });
 });
 
-describe("HttpApiClient: リトライと指数バックオフ", () => {
-  it("503 → 200 でリトライして成功する", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(makeResponse(503, "down"))
-      .mockResolvedValueOnce(makeResponse(200, '{"job_id":"j1"}'));
+describe("HttpApiClient: リトライしない（単発リクエスト）", () => {
+  it("5xx は再試行せず 1 回で SateaisApiError を投げる", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(503, "down"));
     const client = makeClient(fetchMock);
 
-    const promise = client.getJob("j1");
-    await vi.runAllTimersAsync();
-    const res = await promise;
-
-    expect(res).toEqual({ job_id: "j1" });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(client.getJob("j1")).rejects.toBeInstanceOf(SateaisApiError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("429 / 504 もリトライ対象", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(makeResponse(429, "slow"))
-      .mockResolvedValueOnce(makeResponse(504, "gw"))
-      .mockResolvedValueOnce(makeResponse(200, "{}"));
+  it("429 も再試行せず 1 回で RateLimitError を投げる", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(429, "slow"));
     const client = makeClient(fetchMock);
 
-    const promise = client.getJob("j1");
-    await vi.runAllTimersAsync();
-    await promise;
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await expect(client.getJob("j1")).rejects.toBeInstanceOf(RateLimitError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("4xx（VALIDATION_ERROR）は即時失敗しリトライしない", async () => {
+  it("4xx（VALIDATION_ERROR）は 1 回で即時失敗する", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse(
         400,
@@ -212,43 +192,15 @@ describe("HttpApiClient: リトライと指数バックオフ", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("ネットワークエラーをリトライし、最終的に SateaisError を投げる", async () => {
-    vi.useFakeTimers();
+  it("ネットワークエラーは再試行せず SateaisError を投げる", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("network down"));
-    const client = makeClient(fetchMock, { maxRetries: 2 });
+    const client = makeClient(fetchMock);
 
-    const promise = client.getJob("j1").catch((e: unknown) => e);
-    await vi.runAllTimersAsync();
-    const err = await promise;
+    const err = await client.getJob("j1").catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(SateaisError);
     expect((err as Error).message).toContain("network down");
-    // 初回 + リトライ 2 回 = 3
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it("指数バックオフ: 待機時間が 1s, 2s と倍増する", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(makeResponse(503, "x"))
-      .mockResolvedValueOnce(makeResponse(503, "x"))
-      .mockResolvedValueOnce(makeResponse(200, "{}"));
-    const client = makeClient(fetchMock, {
-      retryInitialDelayMs: 1_000,
-      retryMaxDelayMs: 30_000,
-    });
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
-
-    const promise = client.getJob("j1");
-    await vi.runAllTimersAsync();
-    await promise;
-
-    // sleep のための setTimeout 呼び出し（タイムアウト用は別途あるため delay で抽出）
-    const sleepDelays = setTimeoutSpy.mock.calls
-      .map((c) => c[1])
-      .filter((d) => d === 1_000 || d === 2_000);
-    expect(sleepDelays).toEqual([1_000, 2_000]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -264,7 +216,7 @@ describe("HttpApiClient: タイムアウト（AbortController）", () => {
           });
         }),
     ) as unknown as typeof fetch;
-    const client = makeClient(fetchMock, { maxRetries: 0, timeoutMs: 5_000 });
+    const client = makeClient(fetchMock, { timeoutMs: 5_000 });
 
     const promise = client.getJob("j1").catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(5_000);

@@ -1,7 +1,7 @@
 /**
  * SateAIs API クライアント（ユーザー向けファサード）
  *
- * 検出（`client.ship` など）とジョブ操作（`client.jobs`）を同居させた
+ * 検出（`client.analyze.ship` など）とジョブ操作（`client.jobs`）を同居させた
  * composition root。{@link ApiClient} を結線して動作する。
  */
 
@@ -64,22 +64,74 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * scene_id / polygon+date パターンの検出リソース（ship / oilslick）
+ * 検出リソース（`client.analyze`）
+ *
+ * 各検出エンドポイントを `client.analyze.ship(...)` のようなメソッドとして提供する。
+ * 姉妹リポ `sateais-py` の `client.analyze` facade に形を揃えている。
  */
-export class SceneAnalysisResource {
-  constructor(
-    private readonly api: ApiClient,
-    private readonly endpoint: Extract<AnalysisEndpoint, "ship" | "oilslick">,
-  ) {}
+export class AnalyzeResource {
+  constructor(private readonly api: ApiClient) {}
 
   /**
-   * 検出ジョブを投入する
+   * 船舶検出ジョブを投入する（`ship`）
    *
    * @param params scene_id 指定（フルシーン）または polygon + date 指定（自動選択）
    * @returns 投入されたジョブの情報（`job_id` を含む）
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
-  analyze(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
+  ship(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
+    return this.submitScene("ship", params);
+  }
+
+  /**
+   * オイルスリック検出ジョブを投入する（`oilslick`）
+   *
+   * @param params scene_id 指定（フルシーン）または polygon + date 指定（自動選択）
+   * @returns 投入されたジョブの情報（`job_id` を含む）
+   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
+   */
+  oilslick(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
+    return this.submitScene("oilslick", params);
+  }
+
+  /**
+   * 新規建物検出ジョブを投入する（`newbuilding`）
+   *
+   * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
+   * @returns 投入されたジョブの情報（`job_id` を含む）
+   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
+   */
+  newbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
+    return this.submitPolygonPeriod("newbuilding", params);
+  }
+
+  /**
+   * 消失建物検出ジョブを投入する（`disappearbuilding`）
+   *
+   * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
+   * @returns 投入されたジョブの情報（`job_id` を含む）
+   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
+   */
+  disappearbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
+    return this.submitPolygonPeriod("disappearbuilding", params);
+  }
+
+  /**
+   * 時系列変化検出ジョブを投入する（`timeseries`）
+   *
+   * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
+   * @returns 投入されたジョブの情報（`job_id` を含む）
+   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
+   */
+  timeseries(params: PolygonPeriodParams): Promise<JobCreateResponse> {
+    return this.submitPolygonPeriod("timeseries", params);
+  }
+
+  /** scene_id / polygon+date パターン（ship / oilslick）の検証と投入 */
+  private submitScene(
+    endpoint: Extract<AnalysisEndpoint, "ship" | "oilslick">,
+    params: SceneAnalyzeParams,
+  ): Promise<JobCreateResponse> {
     const hasScene = "scene_id" in params && !!params.scene_id;
     const hasPolygonDate =
       "polygon" in params && !!params.polygon && !!params.date;
@@ -87,44 +139,31 @@ export class SceneAnalysisResource {
       throw new ValidationError({
         code: "VALIDATION_ERROR",
         status: 400,
-        message: `${this.endpoint}.analyze requires either 'scene_id' or both 'polygon' and 'date'`,
+        message: `analyze.${endpoint} requires either 'scene_id' or both 'polygon' and 'date'`,
       });
     }
-    return this.api.submitAnalysis(this.endpoint, {
+    return this.api.submitAnalysis(endpoint, {
       ...params,
       satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
     });
   }
-}
 
-/**
- * polygon + 期間パターンの検出リソース（newbuilding / disappearbuilding / timeseries）
- */
-export class PolygonPeriodAnalysisResource {
-  constructor(
-    private readonly api: ApiClient,
-    private readonly endpoint: Extract<
+  /** polygon + 期間パターン（newbuilding / disappearbuilding / timeseries）の検証と投入 */
+  private submitPolygonPeriod(
+    endpoint: Extract<
       AnalysisEndpoint,
       "newbuilding" | "disappearbuilding" | "timeseries"
     >,
-  ) {}
-
-  /**
-   * 検出ジョブを投入する
-   *
-   * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
-   * @returns 投入されたジョブの情報（`job_id` を含む）
-   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
-   */
-  analyze(params: PolygonPeriodParams): Promise<JobCreateResponse> {
+    params: PolygonPeriodParams,
+  ): Promise<JobCreateResponse> {
     if (!params.polygon || !params.date_start || !params.date_end) {
       throw new ValidationError({
         code: "VALIDATION_ERROR",
         status: 400,
-        message: `${this.endpoint}.analyze requires 'polygon', 'date_start', and 'date_end'`,
+        message: `analyze.${endpoint} requires 'polygon', 'date_start', and 'date_end'`,
       });
     }
-    return this.api.submitAnalysis(this.endpoint, {
+    return this.api.submitAnalysis(endpoint, {
       ...params,
       satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
     });
@@ -219,15 +258,6 @@ export interface ClientOptions {
   /** 1 リクエストあたりのタイムアウト（ミリ秒）。既定 30,000ms。 */
   timeoutMs?: number;
   /**
-   * リトライ最大回数（初回を除く再試行回数）。既定 4（= 合計最大 5 回）。
-   * `429` / `5xx` / `504`・ネットワークエラー・タイムアウトが対象。
-   */
-  maxRetries?: number;
-  /** バックオフ開始待機時間（ミリ秒）。既定 1,000ms。 */
-  retryInitialDelayMs?: number;
-  /** バックオフ上限待機時間（ミリ秒）。既定 30,000ms。 */
-  retryMaxDelayMs?: number;
-  /**
    * 差し替え可能な fetch 実装。既定はグローバルの `fetch`（Node.js 18+ / ブラウザ）。
    */
   fetch?: typeof fetch;
@@ -246,36 +276,21 @@ export interface ClientOptions {
  * @example
  * ```ts
  * const client = new Client({ apiKey: "sk_live_xxxxx" });
- * const job = await client.ship.analyze({ scene_id: "S1A_IW_GRDH_..." });
+ * const job = await client.analyze.ship({ scene_id: "S1A_IW_GRDH_..." });
  * const geojson = await client.jobs.wait(job.job_id);
  * console.log(geojson.features.length, "ships found");
  * ```
  */
 export class Client {
-  /** 船舶検出リソース。 */
-  readonly ship: SceneAnalysisResource;
-  /** オイルスリック検出リソース。 */
-  readonly oilslick: SceneAnalysisResource;
-  /** 新規建物検出リソース。 */
-  readonly newbuilding: PolygonPeriodAnalysisResource;
-  /** 消失建物検出リソース。 */
-  readonly disappearbuilding: PolygonPeriodAnalysisResource;
-  /** 時系列変化検出リソース。 */
-  readonly timeseries: PolygonPeriodAnalysisResource;
+  /** 検出リソース（`analyze.ship` / `analyze.oilslick` など）。 */
+  readonly analyze: AnalyzeResource;
   /** ジョブ操作リソース（状態取得・結果取得・完了待ち）。 */
   readonly jobs: JobsResource;
 
   constructor(options: ClientOptions = {}) {
     const api = options.apiClient ?? Client.createHttpApiClient(options);
 
-    this.ship = new SceneAnalysisResource(api, "ship");
-    this.oilslick = new SceneAnalysisResource(api, "oilslick");
-    this.newbuilding = new PolygonPeriodAnalysisResource(api, "newbuilding");
-    this.disappearbuilding = new PolygonPeriodAnalysisResource(
-      api,
-      "disappearbuilding",
-    );
-    this.timeseries = new PolygonPeriodAnalysisResource(api, "timeseries");
+    this.analyze = new AnalyzeResource(api);
     this.jobs = new JobsResource(api);
   }
 
@@ -302,9 +317,6 @@ export class Client {
       apiKey,
       baseUrl: (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, ""),
       timeoutMs: options.timeoutMs ?? 30_000,
-      maxRetries: options.maxRetries ?? 4,
-      retryInitialDelayMs: options.retryInitialDelayMs ?? 1_000,
-      retryMaxDelayMs: options.retryMaxDelayMs ?? 30_000,
       // bind しないと fetch が Illegal invocation になる環境がある
       fetch: (...args) => fetchImpl(...args),
     });

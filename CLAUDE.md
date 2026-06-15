@@ -89,8 +89,8 @@ export {
 
 1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）を追加
-3. `client.ts` の `Client` に検出メソッド（`client.<name>.analyze()`）を追加
-4. テスト追加（`types` の検証 + `client` の `analyze()`）
+3. `client.ts` の `AnalyzeResource` に検出メソッド（`client.analyze.<name>()`）を追加
+4. テスト追加（`types` の検証 + `client.analyze.<name>()`）
 
 ### HTTP レスポンス形式が変わった
 
