@@ -4,7 +4,7 @@
 
 ## 設計方針
 
-姉妹リポ [`sateais-py`](../../sateais-py/) の **軽量 Hexagonal 構成**に倣い、
+姉妹リポ [`sateais-py`](https://github.com/spaceshiftinc/sateais-py/tree/v0.1.0) の **軽量 Hexagonal 構成**に倣い、
 SDK 規模に対する過剰設計を避けつつ、唯一テストで差し替え価値の高い
 HTTP 通信だけを Port（interface）で抽象化しています。
 
