@@ -21,7 +21,7 @@ bundled type definitions (`.d.ts`). Runs on Node.js 18+ and modern browsers.
 import { Client } from "@sateais/sdk";
 
 const client = new Client({ apiKey: process.env.SATEAIS_API_KEY });
-const job = await client.ship.analyze({ scene_id: "S1A_IW_GRDH_..." });
+const job = await client.analyze.ship({ scene_id: "S1A_IW_GRDH_..." });
 const result = await client.jobs.wait(job.job_id); // poll until completion
 console.log(result.features.length, "ships found");
 ```
@@ -52,18 +52,18 @@ If the API key cannot be resolved, an `AuthenticationError` is thrown.
 
 | Method | Input pattern |
 | --- | --- |
-| `client.ship.analyze(...)` | `scene_id`, or `polygon`+`date` |
-| `client.oilslick.analyze(...)` | Same as above |
-| `client.newbuilding.analyze(...)` | `polygon`+`date_start`+`date_end` |
-| `client.disappearbuilding.analyze(...)` | Same as above |
-| `client.timeseries.analyze(...)` | Same as above |
+| `client.analyze.ship(...)` | `scene_id`, or `polygon`+`date` |
+| `client.analyze.oilslick(...)` | Same as above |
+| `client.analyze.newbuilding(...)` | `polygon`+`date_start`+`date_end` |
+| `client.analyze.disappearbuilding(...)` | Same as above |
+| `client.analyze.timeseries(...)` | Same as above |
 
 There are two input patterns:
 
 ```ts
 // scene_id family (ship / oilslick): scene ID, or polygon + a single date
-await client.ship.analyze({ satellite_id: "sentinel-1", scene_id: "S1A_IW_GRDH_..." });
-await client.oilslick.analyze({
+await client.analyze.ship({ satellite_id: "sentinel-1", scene_id: "S1A_IW_GRDH_..." });
+await client.analyze.oilslick({
   satellite_id: "sentinel-1",
   polygon: "POLYGON((...))",          // WKT
   date: "2026-05-01",
@@ -72,7 +72,7 @@ await client.oilslick.analyze({
 });
 
 // polygon + date range family (newbuilding / disappearbuilding / timeseries)
-await client.timeseries.analyze({
+await client.analyze.timeseries({
   satellite_id: "sentinel-1",
   polygon: "POLYGON((...))",          // WKT
   date_start: "2026-01-01",

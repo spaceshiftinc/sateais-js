@@ -3,8 +3,8 @@
  *
  * `ApiClient` interface を唯一の I/O 抽象境界とし、`HttpApiClient` が標準 `fetch`
  * を用いた具体実装を提供する。Bearer 認証・タイムアウト（AbortController）・
- * 指数バックオフリトライ・NaN を含むレスポンスの安全パース・エラー envelope の
- * 例外へのマッピングをここに閉じ込める。
+ * NaN を含むレスポンスの安全パース・エラー envelope の例外へのマッピングを
+ * ここに閉じ込める。
  */
 
 import {
@@ -50,23 +50,9 @@ export interface HttpApiClientConfig {
   baseUrl: string;
   /** 1 リクエストあたりのタイムアウト（ミリ秒）。 */
   timeoutMs: number;
-  /** リトライ最大回数（初回を除く再試行回数）。 */
-  maxRetries: number;
-  /** バックオフ開始待機時間（ミリ秒）。 */
-  retryInitialDelayMs: number;
-  /** バックオフ上限待機時間（ミリ秒）。 */
-  retryMaxDelayMs: number;
   /** 差し替え可能な fetch 実装。 */
   fetch: typeof fetch;
 }
-
-/** リトライ対象の HTTP ステータス（429 / 5xx / 504） */
-const isRetryableStatus = (status: number): boolean =>
-  status === 429 || status === 504 || (status >= 500 && status < 600);
-
-/** 指定ミリ秒スリープする */
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * レスポンステキストの NaN 値を null に置換してから JSON パースする
@@ -148,9 +134,8 @@ export class HttpApiClient implements ApiClient {
   /**
    * リクエストを送信し、JSON レスポンスをパースして返す
    *
-   * 429 / 5xx / 504、およびネットワークエラー・タイムアウトは指数バックオフで
-   * リトライする（`4xx` は即時失敗）。非 OK レスポンスはエラー envelope を解釈して
-   * {@link SateaisApiError} 系に変換する。
+   * 非 OK レスポンスはエラー envelope を解釈して {@link SateaisApiError} 系に変換する。
+   * ネットワークエラー・タイムアウトは {@link SateaisError} に変換する（リトライしない）。
    *
    * @param method HTTP メソッド
    * @param path ベース URL からの相対パス（先頭スラッシュ付き）
@@ -163,61 +148,34 @@ export class HttpApiClient implements ApiClient {
     body?: unknown,
   ): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
-    const maxAttempts = 1 + this.config.maxRetries;
-    let lastError: unknown;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      this.config.timeoutMs,
+    );
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        this.config.timeoutMs,
-      );
+    try {
+      const response = await this.config.fetch(url, {
+        method,
+        headers: this.authHeaders(),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-      try {
-        const response = await this.config.fetch(url, {
-          method,
-          headers: this.authHeaders(),
-          body: body === undefined ? undefined : JSON.stringify(body),
-          signal: controller.signal,
-        });
-
-        if (response.ok) {
-          const text = await response.text();
-          return parseJsonSafe<T>(text);
-        }
-
-        // リトライ可能なステータスかつ試行回数が残っていれば再試行
-        if (isRetryableStatus(response.status) && attempt < maxAttempts - 1) {
-          lastError = await this.toApiError(response);
-          await sleep(this.backoffDelay(attempt));
-          continue;
-        }
-
-        throw await this.toApiError(response);
-      } catch (error) {
-        // API エラーはそのまま送出（リトライ済み or 非リトライ対象）
-        if (error instanceof SateaisApiError) throw error;
-
-        // ネットワークエラー・タイムアウトはリトライ
-        lastError = error;
-        if (attempt < maxAttempts - 1) {
-          await sleep(this.backoffDelay(attempt));
-          continue;
-        }
-        throw this.toNetworkError(error);
-      } finally {
-        clearTimeout(timeoutId);
+      if (response.ok) {
+        const text = await response.text();
+        return parseJsonSafe<T>(text);
       }
+
+      throw await this.toApiError(response);
+    } catch (error) {
+      // API エラーはそのまま送出
+      if (error instanceof SateaisApiError) throw error;
+      // ネットワークエラー・タイムアウトを変換
+      throw this.toNetworkError(error);
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    // ループを抜けるのは全試行が失敗した場合のみ
-    throw this.toNetworkError(lastError);
-  }
-
-  /** バックオフ待機時間を算出する（指数バックオフ、上限あり） */
-  private backoffDelay(attempt: number): number {
-    const delay = this.config.retryInitialDelayMs * 2 ** attempt;
-    return Math.min(delay, this.config.retryMaxDelayMs);
   }
 
   /** 非 OK レスポンスを {@link SateaisApiError} 系に変換する */

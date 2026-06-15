@@ -7,8 +7,8 @@
 **`@sateais/sdk`** — SateAIs（SAR 衛星画像解析プラットフォーム、現状の対応衛星は Sentinel-1）の公式 JavaScript / TypeScript SDK。
 
 - `npm install @sateais/sdk`（ローカル install 含む）1 つで **SDK** を提供する
-- CLI は MVP スコープ外（姉妹リポ [`sateais-py`](../sateais-py/) は SDK + CLI 同梱だが、本リポは SDK のみ）
-- API 仕様: [products/sateais-api-orchestrator/docs/API.md](../../products/sateais-api-orchestrator/docs/API.md)
+- CLI は MVP スコープ外（姉妹リポ [`sateais-py`](https://github.com/spaceshiftinc/sateais-py/tree/v0.1.0) は SDK + CLI 同梱だが、本リポは SDK のみ）
+- API 仕様: [API リファレンス](https://docs.spcsft.com/)（バックエンドの API オーケストレーターが提供。詳細仕様は社内ドキュメントを参照）
 - 公開予定パッケージ — 後方互換性に注意
 
 ## 技術スタック
@@ -89,8 +89,8 @@ export {
 
 1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）を追加
-3. `client.ts` の `Client` に検出メソッド（`client.<name>.analyze()`）を追加
-4. テスト追加（`types` の検証 + `client` の `analyze()`）
+3. `client.ts` の `AnalyzeResource` に検出メソッド（`client.analyze.<name>()`）を追加
+4. テスト追加（`types` の検証 + `client.analyze.<name>()`）
 
 ### HTTP レスポンス形式が変わった
 
@@ -153,4 +153,4 @@ npm run test:coverage    # カバレッジ計測（v8、目安 statements 80%）
 - PR タイトル: `feat:` / `fix:` / `docs:` / `chore:` / `refactor:`
 
 ## 関連リポジトリ
-- [sateais-py](../sateais-py/) — Python SDK / CLI（姉妹リポ）
+- [sateais-py](https://github.com/spaceshiftinc/sateais-py/tree/v0.1.0) — Python SDK / CLI（姉妹リポ）

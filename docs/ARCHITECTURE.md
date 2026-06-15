@@ -4,7 +4,7 @@
 
 ## 設計方針
 
-姉妹リポ [`sateais-py`](../../sateais-py/) の **軽量 Hexagonal 構成**に倣い、
+姉妹リポ [`sateais-py`](https://github.com/spaceshiftinc/sateais-py/tree/v0.1.0) の **軽量 Hexagonal 構成**に倣い、
 SDK 規模に対する過剰設計を避けつつ、唯一テストで差し替え価値の高い
 HTTP 通信だけを Port（interface）で抽象化しています。
 
@@ -26,7 +26,7 @@ src/
 └── client.ts      # Client + Analysis（検出）+ Jobs（ユーザー向けファサード）
 ```
 
-検出（`client.ship` など）とジョブ操作（`client.jobs`）は `client.ts` に同居させ、
+検出（`client.analyze.ship` など）とジョブ操作（`client.jobs`）は `client.ts` に同居させ、
 `sateais-py` の `_client.py`（Client + Analyze + Jobs）に倣ってファイル数を抑えています。
 
 ## 依存方向
@@ -44,7 +44,7 @@ types.ts , errors.ts       (entities / exceptions, 外部依存なし)
 ルール:
 
 - `types.ts` / `errors.ts` は外部依存なし（標準のみ）。ここに `fetch` を持ち込まない
-- `http.ts` は `fetch`・通信・リトライ・タイムアウト・エラーマッピングをここに閉じ込める
+- `http.ts` は `fetch`・通信・タイムアウト・エラーマッピングをここに閉じ込める
 - `client.ts` / `index.ts` がすべてを結線する composition root
 
 ## HTTP クライアントの抽象境界（Port）
@@ -66,9 +66,7 @@ export interface ApiClient {
 `HttpApiClient` が標準 `fetch` を用いた具体実装で、以下を担います:
 
 - Bearer 認証ヘッダ（`Authorization: Bearer <apiKey>`）と `Content-Type: application/json` の付与
-- タイムアウト（`AbortController`）
-- 指数バックオフ・リトライ（`429` / `5xx` / `504`、開始 1s・上限 30s・最大 5 回）。
-  `4xx`（`VALIDATION_ERROR` 等）はリトライせず即時失敗
+- タイムアウト（`AbortController`）。リトライは行わず、各リクエストは単発で送出する
 - `NaN` を含むレスポンスの安全パース（`:\s*NaN` → `null` 置換。Python 側 `float('nan')` 対策）
 - エラー envelope（`{ "error": { "code", "message" } }`）→ 例外へのマッピング
 
@@ -109,8 +107,8 @@ export interface ApiClient {
 
 1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）が既存パターンで賄えるか確認
-3. `client.ts` の `Client` に検出メソッド（`client.<name>.analyze()`）を追加
-4. `types` の検証テストと `client` の `analyze()` テストを追加
+3. `client.ts` の `AnalyzeResource` に検出メソッド（`client.analyze.<name>()`）を追加
+4. `types` の検証テストと `client.analyze.<name>()` テストを追加
 
 ## HTTP レスポンス形式が変わった場合
 
@@ -143,8 +141,8 @@ SateaisError                         （基底）
 
 ```
 tests/
-├── http.test.ts        # HttpApiClient（fetch モック: ヘッダ / リトライ / タイムアウト /
-│                        #   NaN パース / エラーマッピング）
+├── http.test.ts        # HttpApiClient（fetch モック: ヘッダ / タイムアウト /
+│                        #   NaN パース / エラーマッピング / 単発リクエスト）
 ├── client.test.ts      # Client / 検出メソッド / Jobs（ApiClient Fake 注入、fake timers）
 └── types.test.ts       # 検出パラメータの検証（任意で tsd / expectTypeOf の型テスト）
 ```
