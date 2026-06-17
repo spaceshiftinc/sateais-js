@@ -6,7 +6,7 @@
  */
 
 /** 検出エンドポイント種別 */
-export type DetectionEndpoint =
+export type AnalysisEndpoint =
   | "ship"
   | "oilslick"
   | "newbuilding"
@@ -62,7 +62,7 @@ export interface PolygonDateInput {
  *
  * scene_id 指定（フルシーン）か polygon + date 指定（自動選択）のいずれか。
  */
-export type SceneDetectParams = SceneIdInput | PolygonDateInput;
+export type SceneAnalyzeParams = SceneIdInput | PolygonDateInput;
 
 /**
  * `newbuilding` / `disappearbuilding` / `timeseries` 検出のリクエストパラメータ
@@ -83,7 +83,7 @@ export interface PolygonPeriodParams {
 }
 
 /**
- * 検出ジョブ投入レスポンス（`POST /detect/{endpoint}`）
+ * 検出ジョブ投入レスポンス（`POST /analyze/{endpoint}`）
  */
 export interface JobCreateResponse {
   /** ジョブ UUID。 */

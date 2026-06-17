@@ -1,0 +1,100 @@
+# CD: main マージ（= リリース）で npm へ正式公開する。
+# package.json の version が npm 上に未存在のときだけ publish（再公開ガード）。
+# 据え置きのままなら publish をスキップし、二重公開を防ぐ。
+# version が prerelease（例 0.1.0-rc.0）なら dist-tag をその識別子（rc）に、
+# 安定版なら latest にして publish する（プレリリースで latest を汚さない）。
+# provenance は安定版（latest）publish のみ付与する。npm provenance は public
+# リポジトリでないと失敗するため、private のまま出す prerelease では付けない。
+name: Release
+run-name: Release → npm (${{ github.ref_name }})
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # v<version> タグの push に必要
+  id-token: write # npm provenance に必要
+
+jobs:
+  release:
+    name: publish to npm (with republish guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      # publish 前ゲート: ビルド/型/テストが green であること
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Verify pack contents
+        run: npm run verify:pack
+
+      - name: Resolve version & republish guard
+        id: guard
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # dist-tag を決定: prerelease（'-' を含む）ならその識別子、安定版なら latest
+          if [[ "$VERSION" == *-* ]]; then
+            PRE="${VERSION#*-}"        # 0.1.0-rc.0 -> rc.0
+            DIST_TAG="${PRE%%.*}"      # rc.0 -> rc
+            PROVENANCE=""              # prerelease は provenance 無し（private 維持のため）
+          else
+            DIST_TAG="latest"
+            PROVENANCE="--provenance"  # 安定版のみ provenance（要 public リポジトリ）
+          fi
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "provenance=$PROVENANCE" >> "$GITHUB_OUTPUT"
+          echo "resolved dist-tag: $DIST_TAG / provenance: ${PROVENANCE:-none}"
+          # npm 上に同一バージョンが既に存在すれば publish をスキップ
+          if npm view "@sateais/sdk@${VERSION}" version >/dev/null 2>&1; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "version ${VERSION} already on npm — skipping publish"
+          else
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "version ${VERSION} not on npm — will publish"
+          fi
+
+      - name: Publish to npm
+        if: steps.guard.outputs.published == 'true'
+        run: npm publish --access public --tag "${{ steps.guard.outputs.dist_tag }}" ${{ steps.guard.outputs.provenance }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag v<version>
+        if: steps.guard.outputs.published == 'true'
+        run: |
+          VERSION="${{ steps.guard.outputs.version }}"
+          TAG="v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "tag ${TAG} already exists — skipping"
+          else
+            git tag -a "$TAG" -m "Release ${TAG}"
+            git push origin "$TAG"
+          fi

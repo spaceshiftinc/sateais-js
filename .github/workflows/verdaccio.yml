@@ -1,0 +1,96 @@
+# develop マージ時の Verdaccio 検証（使い捨て）。
+# 一時 Verdaccio に dev スナップショットを publish → クリーン環境で install →
+# ESM / CJS / 型解決のスモークを回す。ユニットテストや tsc をすり抜ける
+# パッケージングバグ（exports 誤り・files 漏れ・ESM/CJS 解決失敗・型解決不能）を捕まえる。
+name: Verdaccio verification
+run-name: Verdaccio → smoke (${{ github.ref_name }})
+
+on:
+  push:
+    branches: [develop]
+
+concurrency:
+  group: verdaccio-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verdaccio:
+    name: publish → install → smoke (throwaway Verdaccio)
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: http://localhost:4873
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Start throwaway Verdaccio
+        run: |
+          mkdir -p /tmp/verdaccio
+          npx --yes verdaccio@6 --config .verdaccio/config.yaml --listen 4873 \
+            > /tmp/verdaccio/verdaccio.log 2>&1 &
+          # 起動待ち（最大 30 秒）
+          for i in $(seq 1 30); do
+            if curl -sf "$REGISTRY/-/ping" >/dev/null 2>&1; then
+              echo "verdaccio is up"; break
+            fi
+            sleep 1
+          done
+          curl -sf "$REGISTRY/-/ping" >/dev/null
+
+      - name: Assign dev snapshot version (CI 内のみ・コミットしない)
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DEV_VERSION="$(node -p "require('./package.json').version")-dev.${SHORT_SHA}"
+          echo "DEV_VERSION=$DEV_VERSION" >> "$GITHUB_ENV"
+          npm version "$DEV_VERSION" --no-git-tag-version --allow-same-version
+          echo "dev snapshot version: $DEV_VERSION"
+
+      - name: Publish to Verdaccio
+        run: |
+          # 匿名 publish 用にダミートークンを設定（Verdaccio 側は $anonymous 許可）
+          npm set //localhost:4873/:_authToken "ci-dummy-token"
+          # dev スナップショットはプレリリース版のため dist-tag を明示（latest を汚さない）
+          npm publish --registry "$REGISTRY" --access public --tag dev
+
+      - name: Install from Verdaccio into a clean dir & smoke (ESM/CJS/types)
+        run: |
+          set -e
+          WORK=$(mktemp -d)
+          cp scripts/smoke.mjs scripts/smoke.cjs "$WORK/"
+          cp -r scripts/smoke-types "$WORK/smoke-types"
+          cd "$WORK"
+          npm init -y >/dev/null
+          npm install "@sateais/sdk@${DEV_VERSION}" --registry "$REGISTRY"
+
+          echo "::group::ESM smoke"
+          node smoke.mjs
+          echo "::endgroup::"
+
+          echo "::group::CJS smoke"
+          node smoke.cjs
+          echo "::endgroup::"
+
+          echo "::group::types smoke"
+          cd smoke-types
+          # 型解決スモーク用に @sateais/sdk と typescript をこのフィクスチャに install
+          npm init -y >/dev/null
+          npm install "@sateais/sdk@${DEV_VERSION}" --registry "$REGISTRY"
+          npm install --no-save typescript@5
+          npx tsc -p tsconfig.json
+          echo "[smoke:types] ok: tsc resolved types"
+          echo "::endgroup::"
+
+      - name: Verdaccio log (on failure)
+        if: failure()
+        run: cat /tmp/verdaccio/verdaccio.log || true

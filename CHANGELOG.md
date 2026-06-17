@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.0] - 2026-06-17
+
+0.1.0 のリリース候補（プレリリース）。npm dist-tag は `rc`（`npm i @sateais/sdk@rc`）。`latest` には載らない。
+
+### Added
+
+- CI/CD（GitHub Actions）: feature PR で型 / Lint / Format / ビルド / テスト / pack 同梱検証（Node 18・20 マトリクス）
+- `develop` マージ時に使い捨て Verdaccio へ publish → install → ESM/CJS/型解決スモークでパッケージング不整合を検出
+- `main` マージ時に npm へ正式公開（再公開ガード・`v<version>` タグ自動付与）
+- Lint / Format に Biome を導入
+
+### Changed
+
+- **破壊的変更**: 検出メソッドのアクセス形を Python SDK 準拠の facade 形に統一（`client.ship.analyze(...)` → `client.analyze.ship(...)`。oilslick / newbuilding / disappearbuilding / timeseries も同様）。未公開のため移行ガイドは無し
+- 公開クラス `SceneAnalysisResource` / `PolygonPeriodAnalysisResource` を `AnalyzeResource` に統合
+
+### Removed
+
+- **破壊的変更**: リトライ機構を削除（`ClientOptions` の `maxRetries` / `retryInitialDelayMs` / `retryMaxDelayMs`、および指数バックオフ）。`sateais-py` に挙動を揃える。タイムアウト（`timeoutMs`）は維持
+
 ## [0.1.0] - 2026-06-04
 
 ### Added

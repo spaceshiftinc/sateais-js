@@ -1,6 +1,6 @@
 {
   "name": "@sateais/sdk",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.0",
   "description": "SateAIs REST API JavaScript/TypeScript SDK — SAR衛星画像の検出ジョブ投入・結果取得",
   "license": "MIT",
   "author": "Spaceshift Inc.",
@@ -26,12 +26,18 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "verify:pack": "node scripts/verify-pack.mjs",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@vitest/coverage-v8": "^2.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
@@ -48,6 +54,6 @@
     "sdk"
   ],
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   }
 }

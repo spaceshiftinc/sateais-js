@@ -4,12 +4,7 @@
  * SateAIs REST API（Sentinel-1 SAR 検出）の TypeScript SDK。
  */
 
-export {
-  Client,
-  SceneDetectionResource,
-  PolygonPeriodDetectionResource,
-  JobsResource,
-} from "./client";
+export { Client, AnalyzeResource, JobsResource } from "./client";
 export type { ClientOptions, WaitOptions } from "./client";
 
 export { HttpApiClient, parseJsonSafe } from "./http";
@@ -29,14 +24,14 @@ export {
 export type { ApiErrorOptions } from "./errors";
 
 export type {
-  DetectionEndpoint,
+  AnalysisEndpoint,
   SatelliteId,
   OrbitDirection,
   DateDirection,
   JobStatus,
   SceneIdInput,
   PolygonDateInput,
-  SceneDetectParams,
+  SceneAnalyzeParams,
   PolygonPeriodParams,
   JobCreateResponse,
   JobStatusResponse,
