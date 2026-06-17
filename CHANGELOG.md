@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.0] - 2026-06-17
+
+0.1.0 のリリース候補（プレリリース）。npm dist-tag は `rc`（`npm i @sateais/sdk@rc`）。`latest` には載らない。
+
 ### Added
 
 - CI/CD（GitHub Actions）: feature PR で型 / Lint / Format / ビルド / テスト / pack 同梱検証（Node 18・20 マトリクス）
