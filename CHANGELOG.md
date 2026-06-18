@@ -12,7 +12,7 @@
 
 ### Added
 
-- CI/CD（GitHub Actions）: feature PR で型 / Lint / Format / ビルド / テスト / pack 同梱検証（Node 18・20 マトリクス）
+- CI/CD（GitHub Actions）: feature PR で型 / Lint / Format / ビルド / テスト / pack 同梱検証（Node 18・20・24 マトリクス）
 - `develop` マージ時に使い捨て Verdaccio へ publish → install → ESM/CJS/型解決スモークでパッケージング不整合を検出
 - `main` マージ時に npm へ正式公開（再公開ガード・`v<version>` タグ自動付与）
 - Lint / Format に Biome を導入

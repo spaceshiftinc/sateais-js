@@ -137,25 +137,6 @@ try {
 - **CommonJS**: `const { Client } = require("@sateais/sdk");`
 - **型定義同梱**: `.d.ts` をパッケージに含むため、追加の `@types/*` なしで型補完が効きます。
 
-## リリース手順
-
-ブランチ戦略は `develop`（検証）→ `main`（正式公開）です。CI/CD は GitHub Actions で自動化されています。
-
-1. **`develop` 上で version を上げる**: `npm version <patch|minor|major>`（`package.json` の `version` を更新）
-2. [CHANGELOG.md](./CHANGELOG.md) に変更点を追記する
-3. **`develop` にマージ**: 使い捨て [Verdaccio](https://verdaccio.org/) に dev スナップショットを publish → クリーン環境で install → ESM / CJS / 型解決のスモークを実行し、パッケージング不整合（`exports` 誤り・`dist`/`.d.ts` 同梱漏れ等）を機械的に検出します
-4. **`develop` → `main` の PR をマージ**: npm へ `--access public` で正式公開されます。`version` が npm 上に未存在のときだけ publish される**再公開ガード**があるため、version 据え置きのまま main にマージしても二重公開は起きません
-5. 公開後、`v<version>` タグが自動付与されます
-
-> `main` マージ＝リリースです。公開したい変更は必ず手順 1 で version を上げてください。
-> `NPM_TOKEN` を GitHub Secrets に登録しておく必要があります。
-
-| トリガ | ワークフロー | レジストリ |
-| --- | --- | --- |
-| feature/* → PR（develop/main 向け） | 型 / Lint / Format / ビルド / テスト / pack 検証 | — |
-| `develop` push | Verdaccio で publish → install → import スモーク（使い捨て） | Verdaccio（CI 内） |
-| `main` push | 再公開ガード付き publish + タグ付与 | npm（public） |
-
 ## サポート
 
 技術的なお問い合わせは [console-support@spcsft.com](mailto:console-support@spcsft.com) までご連絡ください。

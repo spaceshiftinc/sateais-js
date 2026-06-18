@@ -99,14 +99,37 @@ CI ではこれら（型 / Lint / ビルド / テスト / `npm pack`）がすべ
 
 ## リリース手順
 
-ブランチ戦略は `develop`（検証）→ `main`（正式公開）です（ci/cd Issue と整合）。
+ブランチ戦略は `develop`（検証）→ `main`（正式公開、main マージ＝npm 公開）です。
+CI/CD は GitHub Actions で自動化されています。
 
 1. `develop` 上で `package.json` の `version` を上げる（`npm version <patch|minor|major>` 等）
 2. [CHANGELOG.md](../CHANGELOG.md) に変更点を追記（Keep a Changelog 形式）
-3. `develop` にマージ → CI が使い捨て **Verdaccio** で publish → install → ESM/CJS import スモークを実行し、
+3. `develop` にマージ → CI が使い捨て **Verdaccio** で publish → install → ESM/CJS/型解決スモークを実行し、
    パッケージング不整合（`exports` 誤り・`dist`/`.d.ts` 同梱漏れ等）を検出
-4. `develop` → `main` の PR をマージ → npm へ正式公開（`npm publish --access public`）。
-   `version` が npm 上に未存在のときだけ publish される（再公開ガード）
-5. 公開後に `v<version>` タグを付与（自動・任意）
+4. `develop` → `main` の PR をマージ → npm へ公開（`npm publish --access public`）。
+   `version` が npm 上に未存在のときだけ publish される（**再公開ガード**。version 据え置きのまま
+   main にマージしても二重公開は起きない）
+5. 公開後に `v<version>` タグを自動付与
+
+> `main` マージ＝リリースです。公開したい変更は必ず手順 1 で version を上げてください。
+> `NPM_TOKEN` を GitHub Secrets に登録しておく必要があります。
+
+### dist-tag / provenance の自動切替
+
+publish 時の dist-tag と provenance は、`version` の形から自動で決まります
+（[.github/workflows/release.yml](../.github/workflows/release.yml)）:
+
+- **プレリリース版**（`0.1.0-rc.1` のように `-` を含む）: dist-tag はその識別子（例 `rc` →
+  `npm i @sateais/sdk@rc`）。`latest` は汚さない。provenance は付与しない
+  （private リポジトリでは provenance publish が失敗するため）
+- **安定版**: dist-tag は `latest`、`--provenance` 付き（公開には public リポジトリが必要）
+
+### CI/CD トリガ一覧
+
+| トリガ | ワークフロー | レジストリ |
+| --- | --- | --- |
+| feature/* → PR（develop/main 向け） | 型 / Lint / Format / ビルド / テスト / pack 検証（Node 18 / 20 / 24） | — |
+| `develop` push | Verdaccio で publish → install → import スモーク（使い捨て） | Verdaccio（CI 内） |
+| `main` push | 再公開ガード付き publish + `v<version>` タグ付与 | npm（public） |
 
 > dev スナップショット版は Verdaccio 上で使い捨てのため保持されません。
