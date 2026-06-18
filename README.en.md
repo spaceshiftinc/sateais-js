@@ -46,6 +46,20 @@ export SATEAIS_API_KEY=sk_live_xxxxx
 
 If the API key cannot be resolved, an `AuthenticationError` is thrown.
 
+## Client options
+
+Main options accepted by `new Client(options)`:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `apiKey` | `SATEAIS_API_KEY` env var | API key |
+| `baseUrl` | `https://api.spcsft.com/api/v1` | API base URL (trailing slashes are stripped) |
+| `timeoutMs` | `30_000` | Timeout **per request** (ms) |
+| `fetch` | global `fetch` | Replaceable fetch implementation |
+
+> `Client`'s `timeoutMs` is a per-request timeout. It is distinct from `jobs.wait`'s
+> `timeoutMs` (the overall wait until completion), so do not confuse the two.
+
 ## SDK
 
 ### Analysis methods

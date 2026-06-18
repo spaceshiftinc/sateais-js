@@ -33,18 +33,24 @@ cd /path/to/your-app && npm install /path/to/sateais-sdk-x.y.z.tgz
 npm test                      # 全テスト
 npm run test:coverage         # カバレッジ計測（v8、目安 statements 80%）
 
-# Lint / Format
-npm run lint                  # チェック（ESLint もしくは Biome）
-npm run format                # フォーマット
+# Lint / Format（Biome）
+npm run lint                  # Lint チェック（biome lint）
+npm run format                # フォーマット適用（biome format --write）
+npm run format:check          # フォーマット差分チェック（CI と同じ・書き換えない）
+npm run check                 # Lint + Format をまとめてチェック（biome check）
 
 # 型チェック
 npm run typecheck             # tsc --noEmit
 
 # ビルド（ESM + CJS + .d.ts を dist/ に出力）
 npm run build
+
+# パッケージ同梱物の検証（dist + 型定義）
+npm run verify:pack
 ```
 
-CI ではこれら（型 / Lint / ビルド / テスト / `npm pack`）がすべて通る必要があります。
+CI ではこれら（型 / Lint / Format / ビルド / テスト / pack 検証）が
+すべて通る必要があります（Node 18 / 20 / 24 マトリクス）。
 
 ## ブランチ戦略
 

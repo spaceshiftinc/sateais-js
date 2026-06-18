@@ -70,8 +70,7 @@ export interface ApiClient {
 - `NaN` を含むレスポンスの安全パース（`:\s*NaN` → `null` 置換。Python 側 `float('nan')` 対策）
 - エラー envelope（`{ "error": { "code", "message" } }`）→ 例外へのマッピング
 
-`Client` は `ApiClient` を受け取って動くため、テストでは Fake 実装を注入できます
-（test Issue の `fetch` モック方針と整合）。
+`Client` は `ApiClient` を受け取って動くため、テストでは Fake 実装を注入できます。
 
 ## Port の使い分け
 
@@ -155,9 +154,13 @@ tests/
 | Client / 検出 / Jobs | `tests/client.test.ts` |
 | 検出パラメータの検証 / 型 | `tests/types.test.ts` |
 
-## API リファレンス（TSDoc → TypeDoc）
+## API リファレンス
 
-全 public API には Google Style の日本語 TSDoc を付与します（実装は core Issue 側）。
-これを基に `TypeDoc` で API リファレンスを生成する方針です（型定義同梱のため、
-`sateais-py` のような外部ドキュメントサイト専用構成ではなく TypeDoc 出力を採用）。
-生成・公開は本ドキュメント整備 Issue の範囲で担保します。
+全 public API には Google Style の日本語 TSDoc を付与し、型定義（`.d.ts`）と同梱して
+配布する。利用者はエディタの補完・ホバーで参照でき、追加の `@types/*` は不要。
+
+> 静的サイトとしての SDK API リファレンス生成（TypeDoc 等）は現状未導入。導入する場合も
+> 型定義同梱を前提とし、`sateais-py` のような外部ドキュメントサイト専用構成は採らない。
+
+なお、バックエンドの REST API 仕様は [docs.spcsft.com](https://docs.spcsft.com/) を参照（SDK の
+API リファレンスとは別物）。

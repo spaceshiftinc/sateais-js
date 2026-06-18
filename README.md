@@ -45,6 +45,20 @@ export SATEAIS_API_KEY=sk_live_xxxxx
 
 API キーが解決できない場合は `AuthenticationError` が送出されます。
 
+## クライアントオプション
+
+`new Client(options)` で受け取れる主なオプション:
+
+| オプション | 既定 | 説明 |
+| --- | --- | --- |
+| `apiKey` | 環境変数 `SATEAIS_API_KEY` | API キー |
+| `baseUrl` | `https://api.spcsft.com/api/v1` | API ベース URL（末尾スラッシュは自動除去） |
+| `timeoutMs` | `30_000` | **1 リクエストあたり**のタイムアウト（ms） |
+| `fetch` | グローバル `fetch` | 差し替え用の fetch 実装 |
+
+> `Client` の `timeoutMs` は 1 リクエスト単位のタイムアウトです。`jobs.wait` の
+> `timeoutMs`（完了までの全体待ち時間）とは別物なので混同しないでください。
+
 ## SDK
 
 ### 検出メソッド
