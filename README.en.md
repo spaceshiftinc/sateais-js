@@ -1,6 +1,6 @@
 # @sateais/sdk
 
-[日本語](./README.md) | **English**
+[日本語](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/README.md) | **English**
 
 The official JavaScript / TypeScript SDK for SateAIs. It provides async/await
 programmatic access to the SAR satellite image analysis APIs (ship detection,
@@ -46,6 +46,20 @@ export SATEAIS_API_KEY=sk_live_xxxxx
 
 If the API key cannot be resolved, an `AuthenticationError` is thrown.
 
+## Client options
+
+Main options accepted by `new Client(options)`:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `apiKey` | `SATEAIS_API_KEY` env var | API key |
+| `baseUrl` | `https://api.spcsft.com/api/v1` | API base URL (trailing slashes are stripped) |
+| `timeoutMs` | `30_000` | Timeout **per request** (ms) |
+| `fetch` | global `fetch` | Replaceable fetch implementation |
+
+> `Client`'s `timeoutMs` is a per-request timeout. It is distinct from `jobs.wait`'s
+> `timeoutMs` (the overall wait until completion), so do not confuse the two.
+
 ## SDK
 
 ### Analysis methods
@@ -84,6 +98,18 @@ await client.analyze.timeseries({
 The currently supported `satellite_id` value is `"sentinel-1"`. The return value
 is a `JobCreateResponse` (`job_id` / `status` / `created_at`, etc.). See the
 [API reference](https://docs.spcsft.com/) for detailed parameters.
+
+#### Input limits
+
+The `polygon` area and the date range have server-side limits (jobs exceeding them are rejected with `ValidationError`).
+
+| Method | Max area | Max range |
+| --- | --- | --- |
+| `newbuilding` / `disappearbuilding` | 30000 km² | — |
+| `timeseries` | 50 km² | `date_start`–`date_end` within 3 years |
+
+> `ship` / `oilslick` process a single scene, so they have no area limit. With `polygon`+`date`,
+> the nearest scene within ±14 days of `date` is selected automatically.
 
 ### Job management
 
@@ -145,10 +171,10 @@ For technical inquiries, please contact [console-support@spcsft.com](mailto:cons
 
 ## Related documents
 
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — internal structure and design principles
-- [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) — contributor guide
-- [CHANGELOG.md](./CHANGELOG.md) — change history
+- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/ARCHITECTURE.md) — internal structure and design principles
+- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/CONTRIBUTING.md) — contributor guide
+- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/CHANGELOG.md) — change history
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT — see [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/LICENSE).

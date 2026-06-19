@@ -18,6 +18,7 @@ import {
 } from "../src/errors";
 import { HttpApiClient, parseJsonSafe } from "../src/http";
 import type { HttpApiClientConfig } from "../src/http";
+import { VERSION } from "../src/version";
 import { makeResponse } from "./helpers";
 
 /** 既定設定の HttpApiClient を生成する（fetch のみ差し替え） */
@@ -69,6 +70,17 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(init.headers.Authorization).toBe("Bearer sk_test_abc");
     expect(init.headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("User-Agent に sateais-js/<version> を付与する", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, "{}"));
+    const client = makeClient(fetchMock);
+
+    await client.getJob("job-1");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers["User-Agent"]).toMatch(/^sateais-js\/\d+\.\d+\.\d+/);
+    expect(init.headers["User-Agent"]).toBe(`sateais-js/${VERSION}`);
   });
 
   it("submitAnalysis は POST /analyze/{endpoint} に JSON ボディを送る", async () => {
@@ -146,6 +158,21 @@ describe("HttpApiClient: エラー envelope のマッピング", () => {
       expect((err as SateaisApiError).message).toBe("msg here");
     },
   );
+
+  it("成功(2xx)のボディが非 JSON の場合 SateaisApiError（Invalid JSON）になる", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse(200, "<html>not json</html>"));
+    const client = makeClient(fetchMock);
+
+    const err = await client.getJob("j1").catch((e: unknown) => e);
+    // ネットワークエラー（SateaisError "Request failed"）ではなく
+    // API エラーとして status 付きで分類されること
+    expect(err).toBeInstanceOf(SateaisApiError);
+    expect((err as SateaisApiError).status).toBe(200);
+    expect((err as SateaisApiError).code).toBe("HTTP_200");
+    expect((err as Error).message).toContain("Invalid JSON in response body");
+  });
 
   it("envelope でない 5xx は汎用 SateaisApiError（HTTP_ コード）", async () => {
     const fetchMock = vi
