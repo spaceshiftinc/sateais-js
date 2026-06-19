@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.1] - 2026-06-17
+
+### Fixed
+
+- README の相対リンク（`./docs/...` / `./CHANGELOG.md` / `./LICENSE` 等）を絶対 GitHub URL 化し、npm パッケージページでリンク切れになる問題を修正
+- `package.json` に `repository` / `homepage` / `bugs` を追加（npm のリンク書き換え・リポジトリ表示が有効化される）
+
 ## [0.1.0-rc.0] - 2026-06-17
 
 0.1.0 のリリース候補（プレリリース）。npm dist-tag は `rc`（`npm i @sateais/sdk@rc`）。`latest` には載らない。

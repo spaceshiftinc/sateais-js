@@ -1,6 +1,6 @@
 # @sateais/sdk
 
-**日本語** | [English](./README.en.md)
+**日本語** | [English](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/README.en.md)
 
 SateAIs の公式 JavaScript / TypeScript SDK です。SAR 衛星画像の解析 API
 （船舶検出 / オイルスリック検出 / 新規・消失建物検出 / 時系列変化検出）に
@@ -157,10 +157,10 @@ try {
 
 ## 関連ドキュメント
 
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 内部構造・設計方針
-- [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) — 開発者向けガイド
-- [CHANGELOG.md](./CHANGELOG.md) — 変更履歴
+- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/ARCHITECTURE.md) — 内部構造・設計方針
+- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/CONTRIBUTING.md) — 開発者向けガイド
+- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/CHANGELOG.md) — 変更履歴
 
 ## ライセンス
 
-MIT — [LICENSE](./LICENSE) 参照。
+MIT — [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/LICENSE) 参照。
