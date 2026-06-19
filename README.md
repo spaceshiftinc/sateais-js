@@ -98,6 +98,18 @@ await client.analyze.timeseries({
 （`job_id` / `status` / `created_at` 等）。詳細パラメータは
 [API リファレンス](https://docs.spcsft.com/) を参照してください。
 
+#### 入力上限
+
+`polygon` の面積と期間には API 側の上限があります（超過時はジョブ投入が `ValidationError` で拒否されます）。
+
+| メソッド | 面積上限 | 期間上限 |
+| --- | --- | --- |
+| `newbuilding` / `disappearbuilding` | 30000 km² | — |
+| `timeseries` | 50 km² | `date_start`〜`date_end` は 3 年以内 |
+
+> `ship` / `oilslick` は単一シーン処理のため面積上限はありません。`polygon`+`date` 指定時は
+> `date` を基準に ±14 日以内で最も近いシーンを自動選択します。
+
 ### ジョブ管理
 
 ```ts

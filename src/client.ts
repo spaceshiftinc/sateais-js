@@ -97,6 +97,8 @@ export class AnalyzeResource {
   /**
    * 新規建物検出ジョブを投入する（`newbuilding`）
    *
+   * `polygon` の面積上限は 30000km²（超過時は API が `ValidationError` を返す）。
+   *
    * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
    * @returns 投入されたジョブの情報（`job_id` を含む）
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
@@ -108,6 +110,8 @@ export class AnalyzeResource {
   /**
    * 消失建物検出ジョブを投入する（`disappearbuilding`）
    *
+   * `polygon` の面積上限は 30000km²（超過時は API が `ValidationError` を返す）。
+   *
    * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
    * @returns 投入されたジョブの情報（`job_id` を含む）
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
@@ -118,6 +122,9 @@ export class AnalyzeResource {
 
   /**
    * 時系列変化検出ジョブを投入する（`timeseries`）
+   *
+   * `polygon` の面積上限は 50km²、`date_start`〜`date_end` は 3 年以内
+   * （いずれも超過時は API が `ValidationError` を返す）。
    *
    * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
    * @returns 投入されたジョブの情報（`job_id` を含む）

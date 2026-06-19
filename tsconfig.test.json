@@ -3,6 +3,8 @@
   "compilerOptions": {
     "noEmit": true,
     "types": ["vitest/globals"],
+    // version.test.ts が package.json を import して version 同期を検証するため。
+    "resolveJsonModule": true,
     // テストでは fetch モックの `mock.calls[i][j]` を直接参照するため、
     // インデックスアクセスの厳格チェックは緩める（src は strict のまま）。
     "noUncheckedIndexedAccess": false

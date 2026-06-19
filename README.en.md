@@ -99,6 +99,18 @@ The currently supported `satellite_id` value is `"sentinel-1"`. The return value
 is a `JobCreateResponse` (`job_id` / `status` / `created_at`, etc.). See the
 [API reference](https://docs.spcsft.com/) for detailed parameters.
 
+#### Input limits
+
+The `polygon` area and the date range have server-side limits (jobs exceeding them are rejected with `ValidationError`).
+
+| Method | Max area | Max range |
+| --- | --- | --- |
+| `newbuilding` / `disappearbuilding` | 30000 km² | — |
+| `timeseries` | 50 km² | `date_start`–`date_end` within 3 years |
+
+> `ship` / `oilslick` process a single scene, so they have no area limit. With `polygon`+`date`,
+> the nearest scene within ±14 days of `date` is selected automatically.
+
 ### Job management
 
 ```ts
