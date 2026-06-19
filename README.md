@@ -1,6 +1,6 @@
 # @sateais/sdk
 
-**日本語** | [English](./README.en.md)
+**日本語** | [English](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/README.en.md)
 
 SateAIs の公式 JavaScript / TypeScript SDK です。SAR 衛星画像の解析 API
 （船舶検出 / オイルスリック検出 / 新規・消失建物検出 / 時系列変化検出）に
@@ -142,7 +142,7 @@ try {
 ブランチ戦略は `develop`（検証）→ `main`（正式公開）です。CI/CD は GitHub Actions で自動化されています。
 
 1. **`develop` 上で version を上げる**: `npm version <patch|minor|major>`（`package.json` の `version` を更新）
-2. [CHANGELOG.md](./CHANGELOG.md) に変更点を追記する
+2. [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/CHANGELOG.md) に変更点を追記する
 3. **`develop` にマージ**: 使い捨て [Verdaccio](https://verdaccio.org/) に dev スナップショットを publish → クリーン環境で install → ESM / CJS / 型解決のスモークを実行し、パッケージング不整合（`exports` 誤り・`dist`/`.d.ts` 同梱漏れ等）を機械的に検出します
 4. **`develop` → `main` の PR をマージ**: npm へ `--access public` で正式公開されます。`version` が npm 上に未存在のときだけ publish される**再公開ガード**があるため、version 据え置きのまま main にマージしても二重公開は起きません
 5. 公開後、`v<version>` タグが自動付与されます
@@ -162,10 +162,10 @@ try {
 
 ## 関連ドキュメント
 
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 内部構造・設計方針
-- [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) — 開発者向けガイド
-- [CHANGELOG.md](./CHANGELOG.md) — 変更履歴
+- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/ARCHITECTURE.md) — 内部構造・設計方針
+- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/CONTRIBUTING.md) — 開発者向けガイド
+- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/CHANGELOG.md) — 変更履歴
 
 ## ライセンス
 
-MIT — [LICENSE](./LICENSE) 参照。
+MIT — [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/LICENSE) 参照。
