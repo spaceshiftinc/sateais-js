@@ -68,11 +68,14 @@ export type SceneAnalyzeParams = SceneIdInput | PolygonDateInput;
  * `newbuilding` / `disappearbuilding` / `timeseries` 検出のリクエストパラメータ
  *
  * before/after 比較のため 2 期間を指定する polygon + 期間パターンのみ。
+ *
+ * 面積上限は `newbuilding` / `disappearbuilding` が 30000km²、`timeseries` が 50km²。
+ * `timeseries` は加えて `date_start`〜`date_end` が 3 年以内（超過時は API が `ValidationError`）。
  */
 export interface PolygonPeriodParams {
   /** 衛星種別。省略時は `"sentinel-1"`。 */
   satellite_id?: SatelliteId;
-  /** AOI ポリゴン（WKT, EPSG:4326）。 */
+  /** AOI ポリゴン（WKT, EPSG:4326）。面積上限はエンドポイントごとに異なる。 */
   polygon: string;
   /** 比較対象の前期間の開始日（`YYYY-MM-DD`）。 */
   date_start: string;

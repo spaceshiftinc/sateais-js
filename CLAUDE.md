@@ -17,7 +17,7 @@
 - ランタイム依存: **ゼロ**（標準 `fetch` を利用、Node.js 18+ / モダンブラウザ）
 - ビルド: `tsup`（ESM + CommonJS デュアル出力、`.d.ts` 型定義同梱）
 - テスト: `Vitest`（`fetch` モック、実 API へはアクセスしない）
-- Lint / Format: ESLint もしくは Biome
+- Lint / Format: Biome
 - パッケージマネージャ: `npm`
 
 ## アーキテクチャ
@@ -41,7 +41,7 @@ src/
 
 ### 設計判断: なぜ Port は ApiClient だけか
 
-- **`ApiClient` interface あり**: テストで HTTP を完全排除した Fake で網羅でき、将来別 transport を足す余地もある（test Issue の `fetch` モック方針と整合）
+- **`ApiClient` interface あり**: テストで HTTP を完全排除した Fake で網羅でき、将来別 transport を足す余地もある（`fetch` モックでテストする方針と整合）
 - **タイマー（`setTimeout`）は Port なし**: テストは Vitest の fake timers で十分。interface を切るとファイル数が増えるだけで価値が無い
 
 **「Port を切るか」の判断基準は「テストで本当に困るか」+「差し替える未来が現実的にあるか」**。両方弱ければ Port を切らない。
@@ -126,7 +126,7 @@ npm run test:coverage    # カバレッジ計測（v8、目安 statements 80%）
 - **HTTP を絡めないテスト** → `ApiClient` の Fake 実装を注入
 - **時刻系（`wait` のポーリング）** → Vitest の fake timers で制御
 
-詳細なテスト方針は [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) と test Issue を参照。
+詳細なテスト方針は [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) を参照。
 
 ## ビルド / パッケージング
 
@@ -135,7 +135,7 @@ npm run test:coverage    # カバレッジ計測（v8、目安 statements 80%）
 - `files` を `dist` 中心に絞り、公開物を最小化
 - `prepublishOnly` でビルドを強制
 - パッケージング不整合（`exports` 誤り・`dist`/`.d.ts` 同梱漏れ・ESM/CJS 解決失敗）は
-  develop マージ時の Verdaccio 検証（ci/cd Issue）で機械的に捕捉する
+  develop マージ時の Verdaccio 検証で機械的に捕捉する
 
 ## 後方互換性 (publish 後)
 

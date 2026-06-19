@@ -45,6 +45,20 @@ export SATEAIS_API_KEY=sk_live_xxxxx
 
 API キーが解決できない場合は `AuthenticationError` が送出されます。
 
+## クライアントオプション
+
+`new Client(options)` で受け取れる主なオプション:
+
+| オプション | 既定 | 説明 |
+| --- | --- | --- |
+| `apiKey` | 環境変数 `SATEAIS_API_KEY` | API キー |
+| `baseUrl` | `https://api.spcsft.com/api/v1` | API ベース URL（末尾スラッシュは自動除去） |
+| `timeoutMs` | `30_000` | **1 リクエストあたり**のタイムアウト（ms） |
+| `fetch` | グローバル `fetch` | 差し替え用の fetch 実装 |
+
+> `Client` の `timeoutMs` は 1 リクエスト単位のタイムアウトです。`jobs.wait` の
+> `timeoutMs`（完了までの全体待ち時間）とは別物なので混同しないでください。
+
 ## SDK
 
 ### 検出メソッド
@@ -83,6 +97,18 @@ await client.analyze.timeseries({
 `satellite_id` の現状の対応値は `"sentinel-1"` です。戻り値は `JobCreateResponse`
 （`job_id` / `status` / `created_at` 等）。詳細パラメータは
 [API リファレンス](https://docs.spcsft.com/) を参照してください。
+
+#### 入力上限
+
+`polygon` の面積と期間には API 側の上限があります（超過時はジョブ投入が `ValidationError` で拒否されます）。
+
+| メソッド | 面積上限 | 期間上限 |
+| --- | --- | --- |
+| `newbuilding` / `disappearbuilding` | 30000 km² | — |
+| `timeseries` | 50 km² | `date_start`〜`date_end` は 3 年以内 |
+
+> `ship` / `oilslick` は単一シーン処理のため面積上限はありません。`polygon`+`date` 指定時は
+> `date` を基準に ±14 日以内で最も近いシーンを自動選択します。
 
 ### ジョブ管理
 
@@ -136,25 +162,6 @@ try {
 - **ESM**: `import { Client } from "@sateais/sdk";`
 - **CommonJS**: `const { Client } = require("@sateais/sdk");`
 - **型定義同梱**: `.d.ts` をパッケージに含むため、追加の `@types/*` なしで型補完が効きます。
-
-## リリース手順
-
-ブランチ戦略は `develop`（検証）→ `main`（正式公開）です。CI/CD は GitHub Actions で自動化されています。
-
-1. **`develop` 上で version を上げる**: `npm version <patch|minor|major>`（`package.json` の `version` を更新）
-2. [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/CHANGELOG.md) に変更点を追記する
-3. **`develop` にマージ**: 使い捨て [Verdaccio](https://verdaccio.org/) に dev スナップショットを publish → クリーン環境で install → ESM / CJS / 型解決のスモークを実行し、パッケージング不整合（`exports` 誤り・`dist`/`.d.ts` 同梱漏れ等）を機械的に検出します
-4. **`develop` → `main` の PR をマージ**: npm へ `--access public` で正式公開されます。`version` が npm 上に未存在のときだけ publish される**再公開ガード**があるため、version 据え置きのまま main にマージしても二重公開は起きません
-5. 公開後、`v<version>` タグが自動付与されます
-
-> `main` マージ＝リリースです。公開したい変更は必ず手順 1 で version を上げてください。
-> `NPM_TOKEN` を GitHub Secrets に登録しておく必要があります。
-
-| トリガ | ワークフロー | レジストリ |
-| --- | --- | --- |
-| feature/* → PR（develop/main 向け） | 型 / Lint / Format / ビルド / テスト / pack 検証 | — |
-| `develop` push | Verdaccio で publish → install → import スモーク（使い捨て） | Verdaccio（CI 内） |
-| `main` push | 再公開ガード付き publish + タグ付与 | npm（public） |
 
 ## サポート
 

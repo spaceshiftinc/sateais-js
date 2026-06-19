@@ -23,6 +23,7 @@ import type {
   JobCreateResponse,
   JobStatusResponse,
 } from "./types";
+import { VERSION } from "./version";
 
 /**
  * HTTP 通信の抽象境界（Port）
@@ -123,11 +124,12 @@ export class HttpApiClient implements ApiClient {
     );
   }
 
-  /** 認証ヘッダーを生成する */
+  /** 認証・共通ヘッダーを生成する */
   private authHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.config.apiKey}`,
       "Content-Type": "application/json",
+      "User-Agent": `sateais-js/${VERSION}`,
     };
   }
 
@@ -164,7 +166,21 @@ export class HttpApiClient implements ApiClient {
 
       if (response.ok) {
         const text = await response.text();
-        return parseJsonSafe<T>(text);
+        try {
+          return parseJsonSafe<T>(text);
+        } catch (parseError) {
+          // 成功レスポンスのボディが非 JSON の場合、生の SyntaxError を
+          // ネットワークエラー扱いにせず SateaisApiError として送出する
+          const detail =
+            parseError instanceof Error
+              ? parseError.message
+              : String(parseError);
+          throw new SateaisApiError({
+            code: `HTTP_${response.status}`,
+            message: `Invalid JSON in response body: ${detail}`,
+            status: response.status,
+          });
+        }
       }
 
       throw await this.toApiError(response);
