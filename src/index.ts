@@ -18,6 +18,7 @@ export {
   InsufficientCreditsError,
   NotFoundError,
   RateLimitError,
+  ResponseParseError,
   JobFailedError,
   JobTimeoutError,
 } from "./errors";

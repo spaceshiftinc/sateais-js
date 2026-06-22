@@ -9,6 +9,7 @@
  * │   ├── InsufficientCreditsError     （402）
  * │   ├── NotFoundError                （404 / 410）
  * │   └── RateLimitError               （429）
+ * ├── ResponseParseError               （2xx 応答ボディの JSON パース失敗: status）
  * ├── JobFailedError                   （wait() 中に failed: errorCode / errorMessage）
  * └── JobTimeoutError                  （wait() タイムアウト）
  * ```
@@ -91,6 +92,27 @@ export class RateLimitError extends SateaisApiError {
   constructor(options: ApiErrorOptions) {
     super(options);
     this.name = "RateLimitError";
+  }
+}
+
+/**
+ * 2xx 応答のボディが JSON としてパースできなかった場合の例外
+ *
+ * これは API のアプリケーションエラー（{@link SateaisApiError}）ではなく、
+ * transport / パース層の問題を表す。サーバが想定外の非 JSON を返した場合などに
+ * 送出され、`HTTP_<status>` のような誤解を招くコードは持たない。
+ *
+ * なお `204 No Content` / `205 Reset Content` や空ボディの 2xx は「正常な空応答」
+ * として扱われ、本例外は送出されない（`undefined` が返る）。
+ */
+export class ResponseParseError extends SateaisError {
+  /** パースに失敗した応答の HTTP ステータスコード。 */
+  readonly status: number;
+
+  constructor(options: { status: number; message: string }) {
+    super(options.message);
+    this.name = "ResponseParseError";
+    this.status = options.status;
   }
 }
 
