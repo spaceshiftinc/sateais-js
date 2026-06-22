@@ -12,6 +12,7 @@ import {
   InsufficientCreditsError,
   NotFoundError,
   RateLimitError,
+  ResponseParseError,
   SateaisApiError,
   SateaisError,
   ValidationError,
@@ -58,10 +59,40 @@ describe("parseJsonSafe", () => {
     );
     expect(result).toEqual({ a: null, b: null, c: 2 });
   });
+
+  it("文字列値の中の `NaN` / `Infinity` は破壊しない（#1 データ破損回避）", () => {
+    const result = parseJsonSafe<{ note: string; v: number | null }>(
+      '{"note":"result: NaN values here, Infinity too", "v": NaN}',
+    );
+    expect(result).toEqual({
+      note: "result: NaN values here, Infinity too",
+      v: null,
+    });
+  });
+
+  it("配列要素の非有限値も null に置換する（#2 配列カバー）", () => {
+    const result = parseJsonSafe<{ coordinates: (number | null)[] }>(
+      '{"coordinates":[NaN, 1.0, -Infinity, Infinity]}',
+    );
+    expect(result).toEqual({ coordinates: [null, 1.0, null, null] });
+  });
+
+  it("`Infinity` / `-Infinity` を null に置換する（#2 Infinity 対応）", () => {
+    expect(
+      parseJsonSafe<{ a: null; b: null }>('{"a": Infinity, "b": -Infinity}'),
+    ).toEqual({ a: null, b: null });
+  });
+
+  it("エスケープを含む文字列値を保護する", () => {
+    const result = parseJsonSafe<{ s: string; v: number | null }>(
+      '{"s":"a\\"b: NaN", "v": NaN}',
+    );
+    expect(result).toEqual({ s: 'a"b: NaN', v: null });
+  });
 });
 
 describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
-  it("Bearer ヘッダと Content-Type を付与する", async () => {
+  it("Bearer ヘッダを付与する", async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, "{}"));
     const client = makeClient(fetchMock);
 
@@ -69,7 +100,28 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect(init.headers.Authorization).toBe("Bearer sk_test_abc");
+  });
+
+  it("POST（ボディあり）には Content-Type を付与する", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse(200, '{"job_id":"j1"}'));
+    const client = makeClient(fetchMock);
+
+    await client.submitAnalysis("ship", { scene_id: "S1A_xxx" });
+
+    const [, init] = fetchMock.mock.calls[0];
     expect(init.headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("GET（ボディなし）には Content-Type を付与しない（#10）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, "{}"));
+    const client = makeClient(fetchMock);
+
+    await client.getJob("job-1");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers["Content-Type"]).toBeUndefined();
   });
 
   it("User-Agent に sateais-js/<version> を付与する", async () => {
@@ -159,19 +211,68 @@ describe("HttpApiClient: エラー envelope のマッピング", () => {
     },
   );
 
-  it("成功(2xx)のボディが非 JSON の場合 SateaisApiError（Invalid JSON）になる", async () => {
+  it("成功(2xx)のボディが非 JSON の場合 ResponseParseError になる（#8）", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(makeResponse(200, "<html>not json</html>"));
     const client = makeClient(fetchMock);
 
     const err = await client.getJob("j1").catch((e: unknown) => e);
-    // ネットワークエラー（SateaisError "Request failed"）ではなく
-    // API エラーとして status 付きで分類されること
-    expect(err).toBeInstanceOf(SateaisApiError);
-    expect((err as SateaisApiError).status).toBe(200);
-    expect((err as SateaisApiError).code).toBe("HTTP_200");
+    // ネットワークエラー（SateaisError "Request failed"）でも
+    // 誤解を招く HTTP_200 コードの SateaisApiError でもなく、
+    // パース層の問題として ResponseParseError で分類されること
+    expect(err).toBeInstanceOf(ResponseParseError);
+    expect(err).toBeInstanceOf(SateaisError);
+    expect(err).not.toBeInstanceOf(SateaisApiError);
+    expect((err as ResponseParseError).status).toBe(200);
     expect((err as Error).message).toContain("Invalid JSON in response body");
+  });
+
+  it.each([204, 205])(
+    "%i は正常な空応答として undefined を返す（#8）",
+    async (status) => {
+      const fetchMock = vi.fn().mockResolvedValue(makeResponse(status, ""));
+      const client = makeClient(fetchMock);
+
+      await expect(client.getJob("j1")).resolves.toBeUndefined();
+    },
+  );
+
+  it("空ボディの 200 は undefined を返す（#8）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, "   "));
+    const client = makeClient(fetchMock);
+
+    await expect(client.getJob("j1")).resolves.toBeUndefined();
+  });
+
+  it("envelope の code が非文字列でも String 正規化される（#9）", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeResponse(400, JSON.stringify({ error: { code: 123, message: 7 } })),
+      );
+    const client = makeClient(fetchMock);
+
+    const err = await client.getJob("j1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ValidationError);
+    expect(typeof (err as SateaisApiError).code).toBe("string");
+    expect((err as SateaisApiError).code).toBe("123");
+    expect((err as Error).message).toBe("7");
+  });
+
+  it("エラーメッセージ中の `NaN` を含む文字列を破壊しない（#1）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse(
+        400,
+        JSON.stringify({
+          error: { code: "BAD", message: "value: NaN rejected" },
+        }),
+      ),
+    );
+    const client = makeClient(fetchMock);
+
+    const err = await client.getJob("j1").catch((e: unknown) => e);
+    expect((err as Error).message).toBe("value: NaN rejected");
   });
 
   it("envelope でない 5xx は汎用 SateaisApiError（HTTP_ コード）", async () => {
@@ -252,4 +353,44 @@ describe("HttpApiClient: タイムアウト（AbortController）", () => {
     expect(err).toBeInstanceOf(SateaisError);
     expect((err as Error).message).toContain("timed out");
   });
+
+  it("abort が DOMException 以外（name=AbortError の Error）でも timed out になる（#7）", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => {
+            const e = new Error("Aborted");
+            e.name = "AbortError";
+            reject(e);
+          });
+        }),
+    ) as unknown as typeof fetch;
+    const client = makeClient(fetchMock, { timeoutMs: 5_000 });
+
+    const promise = client.getJob("j1").catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const err = await promise;
+
+    expect(err).toBeInstanceOf(SateaisError);
+    expect((err as Error).message).toContain("timed out");
+  });
+
+  it.each([0, -1])(
+    "timeoutMs=%i はタイムアウトを無効化する（即時 abort しない、#3）",
+    async (timeoutMs) => {
+      vi.useFakeTimers();
+      const abortSpy = vi.fn();
+      const fetchMock = vi.fn((_url: string, init: { signal: AbortSignal }) => {
+        init.signal.addEventListener("abort", abortSpy);
+        return Promise.resolve(makeResponse(200, "{}"));
+      }) as unknown as typeof fetch;
+      const client = makeClient(fetchMock, { timeoutMs });
+
+      await expect(client.getJob("j1")).resolves.toEqual({});
+      // タイマーを進めても abort は発火しない
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(abortSpy).not.toHaveBeenCalled();
+    },
+  );
 });

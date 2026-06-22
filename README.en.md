@@ -54,11 +54,12 @@ Main options accepted by `new Client(options)`:
 | --- | --- | --- |
 | `apiKey` | `SATEAIS_API_KEY` env var | API key |
 | `baseUrl` | `https://api.spcsft.com/api/v1` | API base URL (trailing slashes are stripped) |
-| `timeoutMs` | `30_000` | Timeout **per request** (ms) |
+| `timeoutMs` | `30_000` | Timeout **per request** (ms). `0` / negative disables it |
 | `fetch` | global `fetch` | Replaceable fetch implementation |
 
 > `Client`'s `timeoutMs` is a per-request timeout. It is distinct from `jobs.wait`'s
 > `timeoutMs` (the overall wait until completion), so do not confuse the two.
+> Passing `0` or a negative value disables the timeout (it does not abort immediately).
 
 ## SDK
 
@@ -126,6 +127,10 @@ const geojson = await client.jobs.wait(jobId, {
 
 > Analysis can take 30–60 minutes. The default poll interval of `jobs.wait` is
 > about 60 seconds accordingly.
+>
+> `jobs.wait` returns the result on `completed`, and throws `JobFailedError` to stop
+> polling on `failed` and other terminal statuses such as `cancelled` / `expired`
+> (including unknown statuses). `timeoutMs` is unlimited when omitted.
 
 ### Exceptions
 
@@ -139,7 +144,8 @@ All exceptions inherit from the base class `SateaisError`.
 | `NotFoundError` | 404 / 410 (including expired result retention) |
 | `RateLimitError` | 429 (rate limited) |
 | `SateaisApiError` | Other HTTP errors (holds `status` / `code` / `message`) |
-| `JobFailedError` | Job failed during `wait()` (holds `errorCode` / `errorMessage`) |
+| `ResponseParseError` | A 2xx response body is not JSON (holds `status`; transport / parse layer issue) |
+| `JobFailedError` | Job failed / non-progress terminal status during `wait()` (holds `errorCode` / `errorMessage`) |
 | `JobTimeoutError` | `wait()` timed out |
 
 ```ts

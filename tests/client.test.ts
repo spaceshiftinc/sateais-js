@@ -289,6 +289,62 @@ describe("JobsResource.wait（fake timers）", () => {
     expect((err as JobFailedError).jobId).toBe("j1");
   });
 
+  it("error_message 欠落時は errorMessage が null になる（#5）", async () => {
+    fake.getJob.mockResolvedValue(
+      jobStatus("failed", {
+        error_code: "X",
+        error_message: undefined,
+        error: "X",
+      }),
+    );
+
+    const promise = client.jobs
+      .wait("j1", { intervalMs: 1_000 })
+      .catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    const err = await promise;
+
+    expect(err).toBeInstanceOf(JobFailedError);
+    expect((err as JobFailedError).errorMessage).toBeNull();
+  });
+
+  it.each(["cancelled", "expired", "weird_unknown"])(
+    "終端外/未知ステータス %s でポーリングを止め JobFailedError を投げる（#4）",
+    async (status) => {
+      // status は型上 JobStatus 4値だが、ランタイムは任意文字列が来うる
+      fake.getJob.mockResolvedValue(
+        jobStatus(status as JobStatus, { error_message: null }),
+      );
+
+      const promise = client.jobs
+        .wait("j1", { intervalMs: 1_000 })
+        .catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+      const err = await promise;
+
+      expect(err).toBeInstanceOf(JobFailedError);
+      expect((err as JobFailedError).errorCode).toBe(status);
+      // 1 回ポーリングしただけで即終了（無限ループしない）
+      expect(fake.getJob).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("timeoutMs == intervalMs の境界で完了するジョブを拾える（#6）", async () => {
+    fake.getJob
+      .mockResolvedValueOnce(jobStatus("pending"))
+      .mockResolvedValueOnce(jobStatus("completed"));
+    fake.getJobResult.mockResolvedValue(GEOJSON);
+
+    const promise = client.jobs.wait("j1", {
+      intervalMs: 1_000,
+      timeoutMs: 1_000,
+    });
+    await vi.runAllTimersAsync();
+    // 旧実装ではスリープ前判定で 1 回目のポーリング後に即タイムアウトしていた
+    await expect(promise).resolves.toEqual(GEOJSON);
+    expect(fake.getJob).toHaveBeenCalledTimes(2);
+  });
+
   it("timeoutMs 超過で JobTimeoutError を投げる", async () => {
     fake.getJob.mockResolvedValue(jobStatus("pending"));
 

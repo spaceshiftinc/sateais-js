@@ -64,6 +64,17 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * ポーリング継続中（非終端）とみなすステータス
+ *
+ * これら以外（`completed` / `failed` のほか `cancelled` / `expired` や未知の
+ * ステータス）はすべて終端として扱い、無限ポーリングを防ぐ。
+ */
+const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set([
+  "pending",
+  "processing",
+]);
+
+/**
  * 検出リソース（`client.analyze`）
  *
  * 各検出エンドポイントを `client.analyze.ship(...)` のようなメソッドとして提供する。
@@ -234,18 +245,34 @@ export class JobsResource {
         throw new JobFailedError({
           jobId,
           errorCode: job.error_code ?? job.error ?? null,
-          errorMessage: job.error_message,
+          errorMessage: job.error_message ?? null,
+        });
+      }
+      // pending / processing 以外（cancelled / expired / 未知ステータス）も
+      // 終端とみなす。これを検知せず回り続けると、既定 timeoutMs が無制限のため
+      // 永久にポーリングしてハングする。
+      if (!IN_PROGRESS_STATUSES.has(job.status)) {
+        throw new JobFailedError({
+          jobId,
+          errorCode: job.error_code ?? job.error ?? job.status,
+          errorMessage:
+            job.error_message ??
+            `Job ended with unexpected status: ${job.status}`,
         });
       }
 
-      if (
-        timeoutMs !== Number.POSITIVE_INFINITY &&
-        Date.now() - start + intervalMs >= timeoutMs
-      ) {
+      // タイムアウト判定はスリープ前の経過時間で行う。判定後はデッドラインを
+      // 超えない範囲でスリープし、境界ぴったりで完了するジョブも次の周回で拾う。
+      const elapsed = Date.now() - start;
+      if (timeoutMs !== Number.POSITIVE_INFINITY && elapsed >= timeoutMs) {
         throw new JobTimeoutError({ jobId, timeoutMs });
       }
+      const waitMs =
+        timeoutMs === Number.POSITIVE_INFINITY
+          ? intervalMs
+          : Math.min(intervalMs, timeoutMs - elapsed);
 
-      await sleep(intervalMs);
+      await sleep(waitMs);
     }
   }
 }
