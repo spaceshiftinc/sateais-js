@@ -65,10 +65,11 @@ export interface ApiClient {
 
 `HttpApiClient` が標準 `fetch` を用いた具体実装で、以下を担います:
 
-- Bearer 認証ヘッダ（`Authorization: Bearer <apiKey>`）と `Content-Type: application/json` の付与
-- タイムアウト（`AbortController`）。リトライは行わず、各リクエストは単発で送出する
-- `NaN` を含むレスポンスの安全パース（`:\s*NaN` → `null` 置換。Python 側 `float('nan')` 対策）
-- エラー envelope（`{ "error": { "code", "message" } }`）→ 例外へのマッピング
+- Bearer 認証ヘッダ（`Authorization: Bearer <apiKey>`）の付与。`Content-Type: application/json` はボディを送る POST にのみ付与する（GET には付けない）
+- タイムアウト（`AbortController`）。`timeoutMs` が正の有限値のときだけ有効で、`0` / 負値 / 非有限値は無効化として扱う。リトライは行わず、各リクエストは単発で送出する
+- 非有限値を含むレスポンスの安全パース（文字列リテラルの外側の `NaN` / `Infinity` / `-Infinity` を `null` 置換。配列要素も対象。文字列値は破壊しない。Python 側 `float('nan')` / `float('inf')` 対策）
+- エラー envelope（`{ "error": { "code", "message" } }`）→ 例外へのマッピング（`code` は非文字列でも `String` 正規化）
+- 2xx でボディが非 JSON の場合は `ResponseParseError`（transport / パース層の問題）。`204` / `205` / 空ボディは正常な空応答として `undefined` を返す
 
 `Client` は `ApiClient` を受け取って動くため、テストでは Fake 実装を注入できます。
 
@@ -130,7 +131,8 @@ SateaisError                         （基底）
 │   ├── InsufficientCreditsError     （402）
 │   ├── NotFoundError                （404 / 410）
 │   └── RateLimitError               （429）
-├── JobFailedError                   （wait() 中に failed: errorCode / errorMessage）
+├── ResponseParseError               （2xx 応答ボディの JSON パース失敗: status）
+├── JobFailedError                   （wait() 中に failed / 終端外ステータス: errorCode / errorMessage）
 └── JobTimeoutError                  （wait() タイムアウト）
 ```
 

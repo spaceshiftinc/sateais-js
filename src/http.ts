@@ -12,6 +12,7 @@ import {
   InsufficientCreditsError,
   NotFoundError,
   RateLimitError,
+  ResponseParseError,
   SateaisApiError,
   SateaisError,
   ValidationError,
@@ -55,18 +56,85 @@ export interface HttpApiClientConfig {
   fetch: typeof fetch;
 }
 
+/** JSON で出現しうる非有限リテラル（長い順に並べ、最長一致を優先する）。 */
+const NON_FINITE_LITERALS = ["-Infinity", "Infinity", "NaN"] as const;
+
+/** 識別子の継続文字（非有限リテラルの語境界判定に使う）。 */
+const isIdentifierChar = (ch: string | undefined): boolean =>
+  ch !== undefined && /[A-Za-z0-9_]/.test(ch);
+
 /**
- * レスポンステキストの NaN 値を null に置換してから JSON パースする
+ * JSON テキスト中の非有限リテラル（`NaN` / `Infinity` / `-Infinity`）を `null` に置換する
  *
- * Python 側で `float('nan')` がそのままシリアライズされるケースへの対処。
- * `"key": NaN` を `"key": null` に置換する。
+ * 文字列リテラルの内側は走査をスキップするため、`{"note":"result: NaN"}` のような
+ * 正当な文字列値は破壊しない（旧実装の全文 `replace` によるデータ破損を回避）。
+ * オブジェクトのプロパティ値だけでなく、配列要素（`[NaN, 1.0]`）も対象にする。
+ *
+ * @param text サニタイズ対象の JSON テキスト
+ * @returns 非有限リテラルを `null` に置換したテキスト
+ */
+const sanitizeNonFinite = (text: string): string => {
+  let result = "";
+  let inString = false;
+  let i = 0;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (inString) {
+      result += ch;
+      // バックスラッシュエスケープは次の 1 文字をそのまま透過する
+      if (ch === "\\") {
+        i += 1;
+        if (i < text.length) result += text[i];
+      } else if (ch === '"') {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      result += ch;
+      i += 1;
+      continue;
+    }
+
+    // 文字列外でのみ非有限リテラルを検出して null に置換する
+    let replaced = false;
+    for (const literal of NON_FINITE_LITERALS) {
+      if (
+        text.startsWith(literal, i) &&
+        !isIdentifierChar(text[i + literal.length])
+      ) {
+        result += "null";
+        i += literal.length;
+        replaced = true;
+        break;
+      }
+    }
+    if (replaced) continue;
+
+    result += ch;
+    i += 1;
+  }
+
+  return result;
+};
+
+/**
+ * 非有限リテラルを安全に処理してから JSON パースする
+ *
+ * Python 側で `float('nan')` / `float('inf')` がそのままシリアライズされ、標準では
+ * パースできない `NaN` / `Infinity` / `-Infinity` が混入するケースへの対処。
+ * これらを `null` に置換してからパースする（{@link sanitizeNonFinite} を参照）。
  *
  * @param text パース対象のレスポンステキスト
  * @returns パース結果
  */
 export const parseJsonSafe = <T>(text: string): T => {
-  const sanitized = text.replace(/:\s*NaN\b/g, ": null");
-  return JSON.parse(sanitized) as T;
+  return JSON.parse(sanitizeNonFinite(text)) as T;
 };
 
 /**
@@ -124,13 +192,22 @@ export class HttpApiClient implements ApiClient {
     );
   }
 
-  /** 認証・共通ヘッダーを生成する */
-  private authHeaders(): Record<string, string> {
-    return {
+  /**
+   * 認証・共通ヘッダーを生成する
+   *
+   * `Content-Type: application/json` はボディを送るリクエスト（POST）にのみ付与する。
+   * ボディの無い GET に付けると厳格な WAF / プロキシが弾くことがあるため。
+   * （`User-Agent` はブラウザの禁止ヘッダで fetch に無視されるが、Node では有効。）
+   *
+   * @param hasBody リクエストボディを送るか
+   */
+  private authHeaders(hasBody: boolean): Record<string, string> {
+    const headers: Record<string, string> = {
       Authorization: `Bearer ${this.config.apiKey}`,
-      "Content-Type": "application/json",
       "User-Agent": `sateais-js/${VERSION}`,
     };
+    if (hasBody) headers["Content-Type"] = "application/json";
+    return headers;
   }
 
   /**
@@ -150,47 +227,60 @@ export class HttpApiClient implements ApiClient {
     body?: unknown,
   ): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
+    const hasBody = body !== undefined;
     const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      this.config.timeoutMs,
-    );
+    // timeoutMs が正の有限値のときだけタイマーを張る。
+    // 0 / 負値 / 非有限値はタイムアウト無効化として扱う（旧実装では 0 が
+    // 即時 abort になり全リクエストが即タイムアウトしていた）。
+    const timeoutMs = this.config.timeoutMs;
+    const timeoutId =
+      Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : undefined;
 
     try {
       const response = await this.config.fetch(url, {
         method,
-        headers: this.authHeaders(),
-        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: this.authHeaders(hasBody),
+        body: hasBody ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
 
       if (response.ok) {
         const text = await response.text();
+        // 204 / 205 や空ボディの 2xx は「正常な空応答」として扱う
+        if (
+          response.status === 204 ||
+          response.status === 205 ||
+          text.trim() === ""
+        ) {
+          return undefined as T;
+        }
         try {
           return parseJsonSafe<T>(text);
         } catch (parseError) {
           // 成功レスポンスのボディが非 JSON の場合、生の SyntaxError を
-          // ネットワークエラー扱いにせず SateaisApiError として送出する
+          // ネットワークエラー扱いにせず ResponseParseError として送出する
+          // （API のアプリケーションエラーではなく transport / パース層の問題）
           const detail =
             parseError instanceof Error
               ? parseError.message
               : String(parseError);
-          throw new SateaisApiError({
-            code: `HTTP_${response.status}`,
-            message: `Invalid JSON in response body: ${detail}`,
+          throw new ResponseParseError({
             status: response.status,
+            message: `Invalid JSON in response body: ${detail}`,
           });
         }
       }
 
       throw await this.toApiError(response);
     } catch (error) {
-      // API エラーはそのまま送出
-      if (error instanceof SateaisApiError) throw error;
+      // SDK の例外（API エラー・パースエラー等）はそのまま送出
+      if (error instanceof SateaisError) throw error;
       // ネットワークエラー・タイムアウトを変換
       throw this.toNetworkError(error);
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
   }
 
@@ -202,8 +292,10 @@ export class HttpApiClient implements ApiClient {
 
     try {
       const envelope = parseJsonSafe<Partial<ApiErrorEnvelope>>(text);
-      if (envelope.error?.code) code = envelope.error.code;
-      if (envelope.error?.message) message = envelope.error.message;
+      // API が数値コード等を返しても型契約（code: string）を守るため String 正規化する
+      if (envelope.error?.code != null) code = String(envelope.error.code);
+      if (envelope.error?.message != null)
+        message = String(envelope.error.message);
     } catch {
       // JSON でない場合は生テキストをメッセージとして扱う
     }
@@ -214,7 +306,9 @@ export class HttpApiClient implements ApiClient {
   /** ネットワーク・タイムアウトエラーを {@link SateaisError} に変換する */
   private toNetworkError(error: unknown): SateaisError {
     if (error instanceof SateaisError) return error;
-    if (error instanceof DOMException && error.name === "AbortError") {
+    // abort 拒否は DOMException とは限らない（undici / polyfill 構成では
+    // 通常の Error のことがある）。name === "AbortError" で堅牢に判定する。
+    if (error instanceof Error && error.name === "AbortError") {
       return new SateaisError(
         `The request timed out after ${this.config.timeoutMs}ms`,
       );
