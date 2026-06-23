@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.2] - 2026-06-23
+
 ### Added
 
 - `ResponseParseError`（`SateaisError` 直下）を追加。2xx 応答のボディが JSON でない場合に送出する。従来の `code: "HTTP_<status>"` の `SateaisApiError`（API 同期エラー扱い）を、transport / パース層の問題として分離した
