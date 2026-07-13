@@ -1,6 +1,6 @@
 # @sateais/sdk
 
-[日本語](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/README.md) | **English**
+[日本語](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/README.md) | **English**
 
 The official JavaScript / TypeScript SDK for SateAIs. It provides async/await
 programmatic access to the SAR satellite image analysis APIs (ship detection,
@@ -177,10 +177,10 @@ For technical inquiries, please contact [console-support@spcsft.com](mailto:cons
 
 ## Related documents
 
-- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/ARCHITECTURE.md) — internal structure and design principles
-- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/docs/CONTRIBUTING.md) — contributor guide
-- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/CHANGELOG.md) — change history
+- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/docs/ARCHITECTURE.md) — internal structure and design principles
+- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/docs/CONTRIBUTING.md) — contributor guide
+- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/CHANGELOG.md) — change history
 
 ## License
 
-MIT — see [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0-rc.1/LICENSE).
+MIT — see [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/LICENSE).

@@ -1,6 +1,6 @@
 {
   "name": "@sateais/sdk",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0",
   "description": "SateAIs REST API JavaScript/TypeScript SDK — SAR衛星画像の検出ジョブ投入・結果取得",
   "license": "MIT",
   "author": "Spaceshift Inc.",
