@@ -151,6 +151,36 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
     expect(res).toEqual({ job_id: "j1" });
   });
 
+  it("previewAnalysis は POST /analyze/{endpoint}/preview に JSON ボディを送る", async () => {
+    const previewBody = JSON.stringify({
+      endpoint_id: "newbuilding",
+      area_sqkm: 78.4,
+      coverage: null,
+      credits: { estimated: 1.0, balance: 480.0, sufficient: true },
+      warnings: [],
+    });
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, previewBody));
+    const client = makeClient(fetchMock);
+
+    const body = {
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date_start: "2026-01-01",
+      date_end: "2026-02-01",
+      satellite_id: "sentinel-1",
+    };
+    const res = await client.previewAnalysis("newbuilding", body);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      "https://api.example.com/api/v1/analyze/newbuilding/preview",
+    );
+    expect(init.method).toBe("POST");
+    expect(init.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(init.body)).toEqual(body);
+    expect(res.credits.sufficient).toBe(true);
+    expect(res.coverage).toBeNull();
+  });
+
   it("GET 系はボディを送らず、jobId を URL エンコードする", async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, "{}"));
     const client = makeClient(fetchMock);

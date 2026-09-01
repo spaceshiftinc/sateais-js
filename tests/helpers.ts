@@ -17,6 +17,7 @@ import type { ApiClient } from "../src/http";
  */
 export class FakeApiClient implements ApiClient {
   submitAnalysis = vi.fn<ApiClient["submitAnalysis"]>();
+  previewAnalysis = vi.fn<ApiClient["previewAnalysis"]>();
   getJob = vi.fn<ApiClient["getJob"]>();
   getJobResult = vi.fn<ApiClient["getJobResult"]>();
 }

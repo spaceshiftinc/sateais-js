@@ -23,6 +23,7 @@ import type {
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
+  PreviewResponse,
 } from "./types";
 import { VERSION } from "./version";
 
@@ -38,6 +39,11 @@ export interface ApiClient {
     endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse>;
+  /** 投入前プレビューを取得する（`POST /analyze/{endpoint}/preview`）。 */
+  previewAnalysis(
+    endpoint: AnalysisEndpoint,
+    params: Record<string, unknown>,
+  ): Promise<PreviewResponse>;
   /** ジョブの状態を取得する（`GET /jobs/{job_id}`）。 */
   getJob(jobId: string): Promise<JobStatusResponse>;
   /** ジョブの結果を GeoJSON で取得する（`GET /jobs/{job_id}/result.geojson`）。 */
@@ -174,6 +180,17 @@ export class HttpApiClient implements ApiClient {
     return this.request<JobCreateResponse>(
       "POST",
       `/analyze/${endpoint}`,
+      params,
+    );
+  }
+
+  previewAnalysis(
+    endpoint: AnalysisEndpoint,
+    params: Record<string, unknown>,
+  ): Promise<PreviewResponse> {
+    return this.request<PreviewResponse>(
+      "POST",
+      `/analyze/${endpoint}/preview`,
       params,
     );
   }

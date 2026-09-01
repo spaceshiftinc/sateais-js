@@ -13,6 +13,7 @@ import type {
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
+  PreviewResponse,
 } from "../src/types";
 import { FakeApiClient } from "./helpers";
 
@@ -86,6 +87,37 @@ describe("検証: newbuilding / disappearbuilding / timeseries（polygon+期間�
   });
 });
 
+describe("検証: preview（analyze と同じ検証ルール）", () => {
+  it("preview.ship: scene_id も polygon+date も無いと ValidationError", () => {
+    const { client, fake } = makeClient();
+    // @ts-expect-error 必須パラメータ欠落（実行時検証の対象）
+    expect(() => client.preview.ship({})).toThrow(ValidationError);
+    expect(fake.previewAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("preview.oilslick: scene_id が空文字なら ValidationError", () => {
+    const { client } = makeClient();
+    expect(() => client.preview.oilslick({ scene_id: "" })).toThrow(
+      ValidationError,
+    );
+  });
+
+  it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
+    "preview.%s: date_end が無いと ValidationError",
+    (endpoint) => {
+      const { client, fake } = makeClient();
+      expect(() =>
+        // @ts-expect-error date_end 欠落
+        client.preview[endpoint]({
+          polygon: "POLYGON((0 0))",
+          date_start: "2026-01-01",
+        }),
+      ).toThrow(ValidationError);
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("型: public API の判別・戻り値型", () => {
   it("AnalysisEndpoint は 5 種の文字列リテラル", () => {
     expectTypeOf<AnalysisEndpoint>().toEqualTypeOf<
@@ -101,6 +133,16 @@ describe("型: public API の判別・戻り値型", () => {
     expectTypeOf(
       client.analyze.newbuilding,
     ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
+  });
+
+  it("プレビューメソッドの戻り値は Promise<PreviewResponse>", () => {
+    const client = new Client({ apiClient: new FakeApiClient() });
+    expectTypeOf(
+      client.preview.ship,
+    ).returns.resolves.toEqualTypeOf<PreviewResponse>();
+    expectTypeOf(
+      client.preview.timeseries,
+    ).returns.resolves.toEqualTypeOf<PreviewResponse>();
   });
 
   it("jobs.status / result / wait の戻り値型", () => {

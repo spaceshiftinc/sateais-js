@@ -23,11 +23,12 @@ src/
 │                  #   JobStatusResponse, GeoJSONResponse
 ├── errors.ts      # 例外階層
 ├── http.ts        # ApiClient interface + HttpApiClient（唯一の I/O 抽象境界）
-└── client.ts      # Client + Analysis（検出）+ Jobs（ユーザー向けファサード）
+└── client.ts      # Client + Analysis（検出）+ Preview（投入前プレビュー）+ Jobs
 ```
 
-検出（`client.analyze.ship` など）とジョブ操作（`client.jobs`）は `client.ts` に同居させ、
-`sateais-py` の `_client.py`（Client + Analyze + Jobs）に倣ってファイル数を抑えています。
+検出（`client.analyze.ship` など）・投入前プレビュー（`client.preview.ship` など）・
+ジョブ操作（`client.jobs`）は `client.ts` に同居させ、`sateais-py` の `_client.py`
+（Client + Analyze + Preview + Jobs）に倣ってファイル数を抑えています。
 
 ## 依存方向
 
@@ -58,6 +59,10 @@ export interface ApiClient {
     endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse>;
+  previewAnalysis(
+    endpoint: AnalysisEndpoint,
+    params: Record<string, unknown>,
+  ): Promise<PreviewResponse>;
   getJob(jobId: string): Promise<JobStatusResponse>;
   getJobResult(jobId: string): Promise<GeoJSONResponse>;
 }
@@ -95,6 +100,10 @@ export interface ApiClient {
 検出リクエストの必須パラメータの組合せ検証は、各検出メソッドが submit 直前に行います
 （`scene_id` 系か `polygon`+期間 系かの判別）。不正な組合せは送信前に `ValidationError`
 として弾きます。
+
+投入前プレビュー（`client.preview.<name>()`）はリクエストボディが投入 API と完全に
+同一のため、検証ロジック（`buildSceneBody` / `buildPolygonPeriodBody`）を
+`AnalyzeResource` と `PreviewResource` で共有しています。
 
 ## 公開境界
 
