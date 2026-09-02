@@ -10,6 +10,7 @@ import {
   AuthenticationError,
   JobFailedError,
   JobTimeoutError,
+  SateaisError,
   ValidationError,
 } from "./errors";
 import { HttpApiClient } from "./http";
@@ -146,7 +147,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   ship(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
-    return this.submitScene("ship", params);
+    return this.api.submitAnalysis(
+      "ship",
+      buildSceneBody("analyze.ship", params),
+    );
   }
 
   /**
@@ -157,7 +161,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   oilslick(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
-    return this.submitScene("oilslick", params);
+    return this.api.submitAnalysis(
+      "oilslick",
+      buildSceneBody("analyze.oilslick", params),
+    );
   }
 
   /**
@@ -170,7 +177,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   newbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
-    return this.submitPolygonPeriod("newbuilding", params);
+    return this.api.submitAnalysis(
+      "newbuilding",
+      buildPolygonPeriodBody("analyze.newbuilding", params),
+    );
   }
 
   /**
@@ -183,7 +193,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   disappearbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
-    return this.submitPolygonPeriod("disappearbuilding", params);
+    return this.api.submitAnalysis(
+      "disappearbuilding",
+      buildPolygonPeriodBody("analyze.disappearbuilding", params),
+    );
   }
 
   /**
@@ -197,31 +210,9 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   timeseries(params: PolygonPeriodParams): Promise<JobCreateResponse> {
-    return this.submitPolygonPeriod("timeseries", params);
-  }
-
-  /** scene_id / polygon+date パターン（ship / oilslick）の検証と投入 */
-  private submitScene(
-    endpoint: Extract<AnalysisEndpoint, "ship" | "oilslick">,
-    params: SceneAnalyzeParams,
-  ): Promise<JobCreateResponse> {
     return this.api.submitAnalysis(
-      endpoint,
-      buildSceneBody(`analyze.${endpoint}`, params),
-    );
-  }
-
-  /** polygon + 期間パターン（newbuilding / disappearbuilding / timeseries）の検証と投入 */
-  private submitPolygonPeriod(
-    endpoint: Extract<
-      AnalysisEndpoint,
-      "newbuilding" | "disappearbuilding" | "timeseries"
-    >,
-    params: PolygonPeriodParams,
-  ): Promise<JobCreateResponse> {
-    return this.api.submitAnalysis(
-      endpoint,
-      buildPolygonPeriodBody(`analyze.${endpoint}`, params),
+      "timeseries",
+      buildPolygonPeriodBody("analyze.timeseries", params),
     );
   }
 }
@@ -229,13 +220,18 @@ export class AnalyzeResource {
 /**
  * 投入前プレビューリソース（`client.preview`）
  *
- * 検出メソッドと同じパラメータで、ジョブを投入せずに消費クレジットの見積もり・
- * 残高・AOI カバレッジを取得する。クレジットは消費されない。残高不足はエラーに
- * ならず `credits.sufficient: false` として返る。
+ * 検出メソッドと同名・同パラメータで、ジョブを投入せずに消費クレジットの
+ * 見積もり・残高・AOI カバレッジを取得する。クレジットは消費されない。
  * 姉妹リポ `sateais-py` の `client.preview` facade に形を揃えている。
  *
- * プレビューが通ってもジョブ投入時には失敗しうる点に注意（同時実行上限 429、
- * 残高不足 402 など。実消費が見積もりを上回ることはない）。
+ * - 残高不足はエラーにならず `credits.sufficient: false` として返る
+ * - `scene_id` 指定など面積が確定しない入力ではクレジットが見積もれず、
+ *   `credits.estimated` は `null`（`warnings` に `CREDITS_NOT_ESTIMABLE`）になる
+ * - プレビューが通ってもジョブ投入時には失敗しうる（同時実行上限 429、
+ *   残高不足 402 など。実消費が見積もりを上回ることはない）
+ *
+ * 各メソッドは対応する検出メソッドと同じ検証を行い、不正な組合せは
+ * {@link ValidationError} として送信前に弾く。
  */
 export class PreviewResource {
   constructor(private readonly api: ApiClient) {}
@@ -243,29 +239,24 @@ export class PreviewResource {
   /**
    * 船舶検出（`ship`）の投入前プレビューを取得する
    *
-   * `scene_id` 指定など面積が確定しない入力ではクレジットが見積もれず、
-   * `credits.estimated` は `null`（`warnings` に `CREDITS_NOT_ESTIMABLE`）になる。
-   *
    * @param params 検出メソッド {@link AnalyzeResource.ship} と同じパラメータ
    * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
-   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   ship(params: SceneAnalyzeParams): Promise<PreviewResponse> {
-    return this.previewScene("ship", params);
+    return this.dispatch("ship", buildSceneBody("preview.ship", params));
   }
 
   /**
    * オイルスリック検出（`oilslick`）の投入前プレビューを取得する
    *
-   * `scene_id` 指定など面積が確定しない入力ではクレジットが見積もれず、
-   * `credits.estimated` は `null`（`warnings` に `CREDITS_NOT_ESTIMABLE`）になる。
-   *
    * @param params 検出メソッド {@link AnalyzeResource.oilslick} と同じパラメータ
    * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
-   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   oilslick(params: SceneAnalyzeParams): Promise<PreviewResponse> {
-    return this.previewScene("oilslick", params);
+    return this.dispatch(
+      "oilslick",
+      buildSceneBody("preview.oilslick", params),
+    );
   }
 
   /**
@@ -273,10 +264,12 @@ export class PreviewResource {
    *
    * @param params 検出メソッド {@link AnalyzeResource.newbuilding} と同じパラメータ
    * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
-   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   newbuilding(params: PolygonPeriodParams): Promise<PreviewResponse> {
-    return this.previewPolygonPeriod("newbuilding", params);
+    return this.dispatch(
+      "newbuilding",
+      buildPolygonPeriodBody("preview.newbuilding", params),
+    );
   }
 
   /**
@@ -284,10 +277,12 @@ export class PreviewResource {
    *
    * @param params 検出メソッド {@link AnalyzeResource.disappearbuilding} と同じパラメータ
    * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
-   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   disappearbuilding(params: PolygonPeriodParams): Promise<PreviewResponse> {
-    return this.previewPolygonPeriod("disappearbuilding", params);
+    return this.dispatch(
+      "disappearbuilding",
+      buildPolygonPeriodBody("preview.disappearbuilding", params),
+    );
   }
 
   /**
@@ -295,35 +290,31 @@ export class PreviewResource {
    *
    * @param params 検出メソッド {@link AnalyzeResource.timeseries} と同じパラメータ
    * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
-   * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   timeseries(params: PolygonPeriodParams): Promise<PreviewResponse> {
-    return this.previewPolygonPeriod("timeseries", params);
-  }
-
-  /** scene_id / polygon+date パターン（ship / oilslick）の検証とプレビュー取得 */
-  private previewScene(
-    endpoint: Extract<AnalysisEndpoint, "ship" | "oilslick">,
-    params: SceneAnalyzeParams,
-  ): Promise<PreviewResponse> {
-    return this.api.previewAnalysis(
-      endpoint,
-      buildSceneBody(`preview.${endpoint}`, params),
+    return this.dispatch(
+      "timeseries",
+      buildPolygonPeriodBody("preview.timeseries", params),
     );
   }
 
-  /** polygon + 期間パターン（newbuilding / disappearbuilding / timeseries）の検証とプレビュー取得 */
-  private previewPolygonPeriod(
-    endpoint: Extract<
-      AnalysisEndpoint,
-      "newbuilding" | "disappearbuilding" | "timeseries"
-    >,
-    params: PolygonPeriodParams,
+  /**
+   * `previewAnalysis` の実装有無を確認して呼び出す
+   *
+   * `previewAnalysis` は後方互換のため {@link ApiClient} 上でオプショナル。
+   * 未実装の実装（旧 Fake 等）が注入された場合は明確なエラーで弾く。
+   */
+  private dispatch(
+    endpoint: AnalysisEndpoint,
+    body: Record<string, unknown>,
   ): Promise<PreviewResponse> {
-    return this.api.previewAnalysis(
-      endpoint,
-      buildPolygonPeriodBody(`preview.${endpoint}`, params),
-    );
+    const previewAnalysis = this.api.previewAnalysis;
+    if (previewAnalysis === undefined) {
+      throw new SateaisError(
+        "The injected ApiClient does not implement previewAnalysis, so client.preview is unavailable",
+      );
+    }
+    return previewAnalysis.call(this.api, endpoint, body);
   }
 }
 
@@ -449,9 +440,11 @@ export interface ClientOptions {
  * @example
  * ```ts
  * const client = new Client({ apiKey: "sk_live_xxxxx" });
- * const preview = await client.preview.ship({ scene_id: "S1A_IW_GRDH_..." });
+ * // 投入前にクレジット見積もりを確認（polygon 指定時のみ見積もり可能）
+ * const aoi = { polygon: "POLYGON((...))", date: "2026-05-01" };
+ * const preview = await client.preview.ship(aoi);
  * console.log(preview.credits.estimated, "credits estimated");
- * const job = await client.analyze.ship({ scene_id: "S1A_IW_GRDH_..." });
+ * const job = await client.analyze.ship(aoi);
  * const geojson = await client.jobs.wait(job.job_id);
  * console.log(geojson.features.length, "ships found");
  * ```

@@ -12,15 +12,16 @@ import {
   AuthenticationError,
   JobFailedError,
   JobTimeoutError,
+  SateaisError,
 } from "../src/errors";
+import type { ApiClient } from "../src/http";
 import type {
   GeoJSONResponse,
   JobCreateResponse,
   JobStatus,
   JobStatusResponse,
-  PreviewResponse,
 } from "../src/types";
-import { FakeApiClient, makeResponse } from "./helpers";
+import { FakeApiClient, makePreviewResponse, makeResponse } from "./helpers";
 
 /** ジョブステータスレスポンスのファクトリ */
 const jobStatus = (
@@ -49,23 +50,7 @@ const JOB_CREATE: JobCreateResponse = {
 
 const GEOJSON: GeoJSONResponse = { type: "FeatureCollection", features: [] };
 
-const PREVIEW: PreviewResponse = {
-  endpoint_id: "newbuilding",
-  area_sqkm: 78.4,
-  coverage: {
-    method: "estimated",
-    requested_area_sqkm: 100.2,
-    ratio: 0.78,
-    polygon: "POLYGON((0 0,1 0,1 1,0 0))",
-  },
-  credits: { estimated: 1.0, balance: 480.0, sufficient: true },
-  warnings: [
-    {
-      code: "LOW_AOI_COVERAGE",
-      message: "Scenes cover only 78% of the requested area.",
-    },
-  ],
-};
+const PREVIEW = makePreviewResponse();
 
 /** @types/node に依存せず process.env を参照する（src と同じ方針） */
 const processEnv = (
@@ -286,30 +271,19 @@ describe("プレビューメソッド（Fake ApiClient）", () => {
     },
   );
 
-  it("レスポンスが PreviewResponse として返る（credits / coverage / warnings）", async () => {
-    const res = await client.preview.newbuilding({
-      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
-      date_start: "2026-01-01",
-      date_end: "2026-02-01",
-    });
-    expect(res.endpoint_id).toBe("newbuilding");
-    expect(res.credits.estimated).toBe(1.0);
-    expect(res.credits.sufficient).toBe(true);
-    expect(res.coverage?.ratio).toBe(0.78);
-    expect(res.warnings[0].code).toBe("LOW_AOI_COVERAGE");
-  });
-
-  it("残高不足でも例外にならない（credits.sufficient: false で返る）", async () => {
-    fake.previewAnalysis.mockResolvedValue({
-      ...PREVIEW,
-      credits: { estimated: 500.0, balance: 10.0, sufficient: false },
-    });
-    const res = await client.preview.timeseries({
-      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
-      date_start: "2026-01-01",
-      date_end: "2026-02-01",
-    });
-    expect(res.credits.sufficient).toBe(false);
+  it("previewAnalysis 未実装の ApiClient（旧 Fake 等）では SateaisError を投げる", () => {
+    // previewAnalysis はオプショナルのため、旧実装は型エラーなく注入できる
+    const legacy: ApiClient = {
+      submitAnalysis: vi.fn<ApiClient["submitAnalysis"]>(),
+      getJob: vi.fn<ApiClient["getJob"]>(),
+      getJobResult: vi.fn<ApiClient["getJobResult"]>(),
+    };
+    const legacyClient = new Client({ apiClient: legacy });
+    expect(() => legacyClient.preview.ship({ scene_id: "S1A_xxx" })).toThrow(
+      SateaisError,
+    );
+    // ジョブ投入へのフォールバックはしない
+    expect(legacy.submitAnalysis).not.toHaveBeenCalled();
   });
 });
 
