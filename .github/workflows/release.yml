@@ -5,6 +5,8 @@
 # 安定版なら latest にして publish する（プレリリースで latest を汚さない）。
 # provenance は安定版（latest）publish のみ付与する。npm provenance は public
 # リポジトリでないと失敗するため、private のまま出す prerelease では付けない。
+# publish 後は v<version> タグを push し、CHANGELOG の該当節をノートにした
+# GitHub Release を作成する（タイトルはタグ名のみ。prerelease は pre-release 扱い）。
 name: Release
 run-name: Release → npm (${{ github.ref_name }})
 
@@ -17,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # v<version> タグの push に必要
+  contents: write # v<version> タグの push と GitHub Release の作成に必要
   id-token: write # npm provenance に必要
 
 jobs:
@@ -98,3 +100,29 @@ jobs:
             git tag -a "$TAG" -m "Release ${TAG}"
             git push origin "$TAG"
           fi
+
+      - name: Create GitHub Release
+        if: steps.guard.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.guard.outputs.version }}"
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists — skipping"
+            exit 0
+          fi
+          # CHANGELOG から該当バージョンの節（見出し行の次〜次の "## [" 手前）を抜き出す
+          awk -v ver="$VERSION" '
+            /^## \[/ { in_section = (index($0, "[" ver "]") > 0); next }
+            in_section { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [[ ! -s /tmp/release-notes.md ]]; then
+            echo "CHANGELOG section for ${VERSION} not found — falling back to link"
+            echo "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/CHANGELOG.md)." > /tmp/release-notes.md
+          fi
+          # prerelease（'-' を含む）は pre-release として作成する
+          PRERELEASE=""
+          [[ "$VERSION" == *-* ]] && PRERELEASE="--prerelease"
+          # タイトルはタグ名のみ（副題を付けない）
+          gh release create "$TAG" --title "$TAG" --notes-file /tmp/release-notes.md $PRERELEASE
