@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-02
+
+投入前プレビュー対応。後方互換のマイナーリリース（既存 API に破壊的変更なし）。
+
 ### Added
 
 - SDK: 投入前プレビュー `client.preview.<name>(...)` を追加（ship / oilslick / newbuilding / disappearbuilding / timeseries の 5 種、`POST /analyze/{endpoint}/preview`）。検出メソッドと同パラメータで、ジョブを投入せずに消費クレジットの見積もり・残高・AOI カバレッジを取得する。アクセス形は Python SDK 準拠の facade 形 `client.preview.<name>(...)`
