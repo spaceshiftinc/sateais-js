@@ -8,6 +8,7 @@
 
 import { vi } from "vitest";
 import type { ApiClient } from "../src/http";
+import type { PreviewResponse } from "../src/types";
 
 /**
  * HTTP を完全排除した {@link ApiClient} の Fake 実装
@@ -17,10 +18,41 @@ import type { ApiClient } from "../src/http";
  */
 export class FakeApiClient implements ApiClient {
   submitAnalysis = vi.fn<ApiClient["submitAnalysis"]>();
-  previewAnalysis = vi.fn<ApiClient["previewAnalysis"]>();
+  // previewAnalysis は interface 上オプショナルのため NonNullable で関数型に絞る
+  previewAnalysis = vi.fn<NonNullable<ApiClient["previewAnalysis"]>>();
   getJob = vi.fn<ApiClient["getJob"]>();
   getJobResult = vi.fn<ApiClient["getJobResult"]>();
 }
+
+/**
+ * テスト用 {@link PreviewResponse} のファクトリ
+ *
+ * API 契約（`endpoint_id` / `area_sqkm` / `coverage` / `credits` / `warnings`）の
+ * 形をここに一元化する。`overrides` で個別ケースの差分だけを上書きする。
+ *
+ * @param overrides 上書きするフィールド
+ * @returns プレビューレスポンス
+ */
+export const makePreviewResponse = (
+  overrides: Partial<PreviewResponse> = {},
+): PreviewResponse => ({
+  endpoint_id: "newbuilding",
+  area_sqkm: 78.4,
+  coverage: {
+    method: "estimated",
+    requested_area_sqkm: 100.2,
+    ratio: 0.78,
+    polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+  },
+  credits: { estimated: 1.0, balance: 480.0, sufficient: true },
+  warnings: [
+    {
+      code: "LOW_AOI_COVERAGE",
+      message: "Scenes cover only 78% of the requested area.",
+    },
+  ],
+  ...overrides,
+});
 
 /**
  * テスト用の最小 `Response` モックを生成する

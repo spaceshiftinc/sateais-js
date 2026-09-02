@@ -22,101 +22,80 @@ const makeClient = (): { client: Client; fake: FakeApiClient } => {
   return { client: new Client({ apiClient: fake }), fake };
 };
 
-describe("検証: ship / oilslick（scene_id か polygon+date）", () => {
-  it("scene_id も polygon+date も無いと ValidationError", () => {
-    const { client, fake } = makeClient();
-    // @ts-expect-error 必須パラメータ欠落（実行時検証の対象）
-    expect(() => client.analyze.ship({})).toThrow(ValidationError);
-    expect(fake.submitAnalysis).not.toHaveBeenCalled();
-  });
-
-  it("polygon はあるが date が無いと ValidationError", () => {
-    const { client } = makeClient();
-    // @ts-expect-error date 欠落
-    expect(() => client.analyze.ship({ polygon: "POLYGON((0 0))" })).toThrow(
-      ValidationError,
-    );
-  });
-
-  it("scene_id が空文字なら ValidationError", () => {
-    const { client } = makeClient();
-    expect(() => client.analyze.oilslick({ scene_id: "" })).toThrow(
-      ValidationError,
-    );
-  });
-
-  it("ValidationError は code=VALIDATION_ERROR / status=400 を持つ", () => {
-    const { client } = makeClient();
-    try {
-      // @ts-expect-error 必須欠落
-      client.analyze.ship({});
-      expect.unreachable();
-    } catch (e) {
-      expect(e).toBeInstanceOf(ValidationError);
-      expect((e as ValidationError).code).toBe("VALIDATION_ERROR");
-      expect((e as ValidationError).status).toBe(400);
-    }
-  });
-});
-
-describe("検証: newbuilding / disappearbuilding / timeseries（polygon+期間）", () => {
-  it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
-    "%s: date_end が無いと ValidationError",
-    (endpoint) => {
+// analyze / preview はリクエストボディと検証ルールが同一（共有ヘルパー経由）のため、
+// 両リソースを同じケース表で検証し、片方だけの変更漏れを検出する。
+describe.each(["analyze", "preview"] as const)(
+  "検証: %s — ship / oilslick（scene_id か polygon+date）",
+  (resource) => {
+    it("scene_id も polygon+date も無いと ValidationError", () => {
       const { client, fake } = makeClient();
-      expect(() =>
-        // @ts-expect-error date_end 欠落
-        client.analyze[endpoint]({
-          polygon: "POLYGON((0 0))",
-          date_start: "2026-01-01",
-        }),
-      ).toThrow(ValidationError);
+      // @ts-expect-error 必須パラメータ欠落（実行時検証の対象）
+      expect(() => client[resource].ship({})).toThrow(ValidationError);
       expect(fake.submitAnalysis).not.toHaveBeenCalled();
-    },
-  );
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    });
 
-  it("polygon が空なら ValidationError", () => {
-    const { client } = makeClient();
-    expect(() =>
-      client.analyze.timeseries({
-        polygon: "",
-        date_start: "2026-01-01",
-        date_end: "2026-02-01",
-      }),
-    ).toThrow(ValidationError);
-  });
-});
-
-describe("検証: preview（analyze と同じ検証ルール）", () => {
-  it("preview.ship: scene_id も polygon+date も無いと ValidationError", () => {
-    const { client, fake } = makeClient();
-    // @ts-expect-error 必須パラメータ欠落（実行時検証の対象）
-    expect(() => client.preview.ship({})).toThrow(ValidationError);
-    expect(fake.previewAnalysis).not.toHaveBeenCalled();
-  });
-
-  it("preview.oilslick: scene_id が空文字なら ValidationError", () => {
-    const { client } = makeClient();
-    expect(() => client.preview.oilslick({ scene_id: "" })).toThrow(
-      ValidationError,
-    );
-  });
-
-  it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
-    "preview.%s: date_end が無いと ValidationError",
-    (endpoint) => {
-      const { client, fake } = makeClient();
+    it("polygon はあるが date が無いと ValidationError", () => {
+      const { client } = makeClient();
       expect(() =>
-        // @ts-expect-error date_end 欠落
-        client.preview[endpoint]({
-          polygon: "POLYGON((0 0))",
+        // @ts-expect-error date 欠落
+        client[resource].ship({ polygon: "POLYGON((0 0))" }),
+      ).toThrow(ValidationError);
+    });
+
+    it("scene_id が空文字なら ValidationError", () => {
+      const { client } = makeClient();
+      expect(() => client[resource].oilslick({ scene_id: "" })).toThrow(
+        ValidationError,
+      );
+    });
+
+    it("ValidationError は code=VALIDATION_ERROR / status=400 を持つ", () => {
+      const { client } = makeClient();
+      try {
+        // @ts-expect-error 必須欠落
+        client[resource].ship({});
+        expect.unreachable();
+      } catch (e) {
+        expect(e).toBeInstanceOf(ValidationError);
+        expect((e as ValidationError).code).toBe("VALIDATION_ERROR");
+        expect((e as ValidationError).status).toBe(400);
+      }
+    });
+  },
+);
+
+describe.each(["analyze", "preview"] as const)(
+  "検証: %s — newbuilding / disappearbuilding / timeseries（polygon+期間）",
+  (resource) => {
+    it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
+      "%s: date_end が無いと ValidationError",
+      (endpoint) => {
+        const { client, fake } = makeClient();
+        expect(() =>
+          // @ts-expect-error date_end 欠落
+          client[resource][endpoint]({
+            polygon: "POLYGON((0 0))",
+            date_start: "2026-01-01",
+          }),
+        ).toThrow(ValidationError);
+        expect(fake.submitAnalysis).not.toHaveBeenCalled();
+        expect(fake.previewAnalysis).not.toHaveBeenCalled();
+      },
+    );
+
+    it("polygon が空なら ValidationError", () => {
+      const { client } = makeClient();
+      expect(() =>
+        client[resource].timeseries({
+          polygon: "",
           date_start: "2026-01-01",
+          date_end: "2026-02-01",
         }),
       ).toThrow(ValidationError);
-      expect(fake.previewAnalysis).not.toHaveBeenCalled();
-    },
-  );
-});
+    });
+  },
+);
 
 describe("型: public API の判別・戻り値型", () => {
   it("AnalysisEndpoint は 5 種の文字列リテラル", () => {

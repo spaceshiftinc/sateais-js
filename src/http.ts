@@ -39,8 +39,13 @@ export interface ApiClient {
     endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse>;
-  /** 投入前プレビューを取得する（`POST /analyze/{endpoint}/preview`）。 */
-  previewAnalysis(
+  /**
+   * 投入前プレビューを取得する（`POST /analyze/{endpoint}/preview`）。
+   *
+   * 後方互換のためオプショナル（既存の `ApiClient` 実装を壊さない）。未実装の
+   * 実装で `client.preview.<name>()` を呼ぶと {@link SateaisError} になる。
+   */
+  previewAnalysis?(
     endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<PreviewResponse>;

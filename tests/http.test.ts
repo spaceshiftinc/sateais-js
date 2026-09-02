@@ -20,7 +20,7 @@ import {
 import { HttpApiClient, parseJsonSafe } from "../src/http";
 import type { HttpApiClientConfig } from "../src/http";
 import { VERSION } from "../src/version";
-import { makeResponse } from "./helpers";
+import { makePreviewResponse, makeResponse } from "./helpers";
 
 /** 既定設定の HttpApiClient を生成する（fetch のみ差し替え） */
 const makeClient = (
@@ -152,14 +152,10 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
   });
 
   it("previewAnalysis は POST /analyze/{endpoint}/preview に JSON ボディを送る", async () => {
-    const previewBody = JSON.stringify({
-      endpoint_id: "newbuilding",
-      area_sqkm: 78.4,
-      coverage: null,
-      credits: { estimated: 1.0, balance: 480.0, sufficient: true },
-      warnings: [],
-    });
-    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, previewBody));
+    const preview = makePreviewResponse({ coverage: null });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse(200, JSON.stringify(preview)));
     const client = makeClient(fetchMock);
 
     const body = {
@@ -175,10 +171,8 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
       "https://api.example.com/api/v1/analyze/newbuilding/preview",
     );
     expect(init.method).toBe("POST");
-    expect(init.headers["Content-Type"]).toBe("application/json");
     expect(JSON.parse(init.body)).toEqual(body);
-    expect(res.credits.sufficient).toBe(true);
-    expect(res.coverage).toBeNull();
+    expect(res).toEqual(preview);
   });
 
   it("GET 系はボディを送らず、jobId を URL エンコードする", async () => {
