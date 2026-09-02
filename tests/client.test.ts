@@ -18,6 +18,7 @@ import type {
   JobCreateResponse,
   JobStatus,
   JobStatusResponse,
+  PreviewResponse,
 } from "../src/types";
 import { FakeApiClient, makeResponse } from "./helpers";
 
@@ -47,6 +48,24 @@ const JOB_CREATE: JobCreateResponse = {
 };
 
 const GEOJSON: GeoJSONResponse = { type: "FeatureCollection", features: [] };
+
+const PREVIEW: PreviewResponse = {
+  endpoint_id: "newbuilding",
+  area_sqkm: 78.4,
+  coverage: {
+    method: "estimated",
+    requested_area_sqkm: 100.2,
+    ratio: 0.78,
+    polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+  },
+  credits: { estimated: 1.0, balance: 480.0, sufficient: true },
+  warnings: [
+    {
+      code: "LOW_AOI_COVERAGE",
+      message: "Scenes cover only 78% of the requested area.",
+    },
+  ],
+};
 
 /** @types/node に依存せず process.env を参照する（src と同じ方針） */
 const processEnv = (
@@ -213,6 +232,84 @@ describe("検出メソッド（Fake ApiClient）", () => {
     const res = await client.analyze.ship({ scene_id: "S1A_xxx" });
     expect(res.job_id).toBe("j1");
     expect(res.status).toBe("pending");
+  });
+});
+
+describe("プレビューメソッド（Fake ApiClient）", () => {
+  let fake: FakeApiClient;
+  let client: Client;
+
+  beforeEach(() => {
+    fake = new FakeApiClient();
+    fake.previewAnalysis.mockResolvedValue(PREVIEW);
+    client = new Client({ apiClient: fake });
+  });
+
+  it("preview.ship: scene_id パターンのボディを previewAnalysis に送る（ジョブは投入しない）", async () => {
+    const res = await client.preview.ship({ scene_id: "S1A_IW_GRDH_xxx" });
+    expect(fake.previewAnalysis).toHaveBeenCalledWith("ship", {
+      scene_id: "S1A_IW_GRDH_xxx",
+      satellite_id: "sentinel-1",
+    });
+    expect(fake.submitAnalysis).not.toHaveBeenCalled();
+    expect(res).toEqual(PREVIEW);
+  });
+
+  it("preview.oilslick: polygon + date パターンのボディを送る", async () => {
+    await client.preview.oilslick({
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date: "2026-01-10",
+      date_direction: "nearest",
+    });
+    expect(fake.previewAnalysis).toHaveBeenCalledWith("oilslick", {
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date: "2026-01-10",
+      date_direction: "nearest",
+      satellite_id: "sentinel-1",
+    });
+  });
+
+  it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
+    "preview.%s: polygon + date_start + date_end のボディを送る",
+    async (endpoint) => {
+      await client.preview[endpoint]({
+        polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+        date_start: "2026-01-01",
+        date_end: "2026-02-01",
+      });
+      expect(fake.previewAnalysis).toHaveBeenCalledWith(endpoint, {
+        polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+        date_start: "2026-01-01",
+        date_end: "2026-02-01",
+        satellite_id: "sentinel-1",
+      });
+    },
+  );
+
+  it("レスポンスが PreviewResponse として返る（credits / coverage / warnings）", async () => {
+    const res = await client.preview.newbuilding({
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date_start: "2026-01-01",
+      date_end: "2026-02-01",
+    });
+    expect(res.endpoint_id).toBe("newbuilding");
+    expect(res.credits.estimated).toBe(1.0);
+    expect(res.credits.sufficient).toBe(true);
+    expect(res.coverage?.ratio).toBe(0.78);
+    expect(res.warnings[0].code).toBe("LOW_AOI_COVERAGE");
+  });
+
+  it("残高不足でも例外にならない（credits.sufficient: false で返る）", async () => {
+    fake.previewAnalysis.mockResolvedValue({
+      ...PREVIEW,
+      credits: { estimated: 500.0, balance: 10.0, sufficient: false },
+    });
+    const res = await client.preview.timeseries({
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date_start: "2026-01-01",
+      date_end: "2026-02-01",
+    });
+    expect(res.credits.sufficient).toBe(false);
   });
 });
 

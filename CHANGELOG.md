@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- SDK: 投入前プレビュー `client.preview.<name>(...)` を追加（ship / oilslick / newbuilding / disappearbuilding / timeseries の 5 種、`POST /analyze/{endpoint}/preview`）。検出メソッドと同パラメータで、ジョブを投入せずに消費クレジットの見積もり・残高・AOI カバレッジを取得する。アクセス形は Python SDK 準拠の facade 形 `client.preview.<name>(...)`
+- 型: `PreviewResponse` / `PreviewCredits` / `Coverage` / `CoverageMethod` / `SceneWarning` を追加
+
+### Changed
+
+- **（破壊的変更）`ApiClient` interface に `previewAnalysis()` を追加。** `ApiClient` の独自実装（テスト用 Fake 含む）はメソッドの追加実装が必要
+
 ## [0.1.0] - 2026-07-13
 
 `@sateais/sdk` の初回安定版。npm dist-tag は `latest`（`npm i @sateais/sdk`）。

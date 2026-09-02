@@ -160,6 +160,74 @@ export interface GeoJSONResponse {
   [key: string]: unknown;
 }
 
+/**
+ * AOI カバレッジの算出方法
+ *
+ * プレビューでは常に `"estimated"`（シーン検索に基づく見込み値）になる。
+ */
+export type CoverageMethod = "measured" | "estimated";
+
+/**
+ * AOI カバレッジ情報
+ *
+ * リクエストした AOI のうち、実際にシーンでカバーされる範囲の情報。
+ */
+export interface Coverage {
+  /** 算出方法（プレビューでは `"estimated"`）。 */
+  method: CoverageMethod;
+  /** リクエストした AOI の面積（km²）。算出できない場合は `null`。 */
+  requested_area_sqkm: number | null;
+  /** AOI のうちシーンでカバーされる割合（0.0〜1.0、小数 2 桁切り捨て）。 */
+  ratio: number | null;
+  /** 実際に解析される範囲のポリゴン（WKT, EPSG:4326）。 */
+  polygon: string | null;
+  [key: string]: unknown;
+}
+
+/** シーン選択に関する警告（`LOW_AOI_COVERAGE` / `CREDITS_NOT_ESTIMABLE` など） */
+export interface SceneWarning {
+  /** 機械可読な警告コード。 */
+  code: string;
+  /** 人間可読な警告メッセージ。 */
+  message: string;
+  [key: string]: unknown;
+}
+
+/**
+ * クレジットの見積もりと残高
+ *
+ * 実消費が `estimated` を上回ることはない（見積もりは上限値）。
+ */
+export interface PreviewCredits {
+  /** 消費クレジットの見積もり。見積もり不能な入力（`scene_id` 指定等）では `null`。 */
+  estimated: number | null;
+  /** 現在のクレジット残高。 */
+  balance: number;
+  /** 残高が見積もりに対して十分か。`estimated` が `null` のときは `null`。 */
+  sufficient: boolean | null;
+  [key: string]: unknown;
+}
+
+/**
+ * 投入前プレビューレスポンス（`POST /analyze/{endpoint}/preview`）
+ *
+ * ジョブは投入されず、クレジットも消費されない。残高不足はエラーにならず
+ * `credits.sufficient: false` として返る。
+ */
+export interface PreviewResponse {
+  /** 対象の検出エンドポイント。 */
+  endpoint_id: string;
+  /** 実際に解析される面積の見込み（km²）。算出できない場合は `null`。 */
+  area_sqkm: number | null;
+  /** AOI カバレッジ情報。シーン検索が失敗・該当なしの場合は `null`。 */
+  coverage: Coverage | null;
+  /** クレジットの見積もりと残高。 */
+  credits: PreviewCredits;
+  /** シーン選択に関する警告。 */
+  warnings: SceneWarning[];
+  [key: string]: unknown;
+}
+
 /** エラー envelope（同期エラー `{ "error": { "code", "message" } }`） */
 export interface ApiErrorEnvelope {
   error: {
