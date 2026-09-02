@@ -23,11 +23,12 @@ src/
 │                  #   JobStatusResponse, GeoJSONResponse
 ├── errors.ts      # 例外階層
 ├── http.ts        # ApiClient interface + HttpApiClient（唯一の I/O 抽象境界）
-└── client.ts      # Client + Analysis（検出）+ Jobs（ユーザー向けファサード）
+└── client.ts      # Client + Analysis（検出）+ Preview（投入前プレビュー）+ Jobs
 ```
 
-検出（`client.analyze.ship` など）とジョブ操作（`client.jobs`）は `client.ts` に同居させ、
-`sateais-py` の `_client.py`（Client + Analyze + Jobs）に倣ってファイル数を抑えています。
+検出（`client.analyze.ship` など）・投入前プレビュー（`client.preview.ship` など）・
+ジョブ操作（`client.jobs`）は `client.ts` に同居させ、`sateais-py` の `_client.py`
+（Client + Analyze + Preview + Jobs）に倣ってファイル数を抑えています。
 
 ## 依存方向
 
@@ -58,6 +59,12 @@ export interface ApiClient {
     endpoint: AnalysisEndpoint,
     params: Record<string, unknown>,
   ): Promise<JobCreateResponse>;
+  // 後方互換のためオプショナル（publish 後の interface への必須メソッド追加は
+  // メジャー以外禁止）。未実装の実装で client.preview を呼ぶと SateaisError
+  previewAnalysis?(
+    endpoint: AnalysisEndpoint,
+    params: Record<string, unknown>,
+  ): Promise<PreviewResponse>;
   getJob(jobId: string): Promise<JobStatusResponse>;
   getJobResult(jobId: string): Promise<GeoJSONResponse>;
 }
@@ -96,6 +103,10 @@ export interface ApiClient {
 （`scene_id` 系か `polygon`+期間 系かの判別）。不正な組合せは送信前に `ValidationError`
 として弾きます。
 
+投入前プレビュー（`client.preview.<name>()`）はリクエストボディが投入 API と完全に
+同一のため、検証ロジック（`buildSceneBody` / `buildPolygonPeriodBody`）を
+`AnalyzeResource` と `PreviewResource` で共有しています。
+
 ## 公開境界
 
 `src/index.ts` から export しているものはすべて public。詳細は同ファイルの export 文を参照。
@@ -108,7 +119,11 @@ export interface ApiClient {
 1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）が既存パターンで賄えるか確認
 3. `client.ts` の `AnalyzeResource` に検出メソッド（`client.analyze.<name>()`）を追加
-4. `types` の検証テストと `client.analyze.<name>()` テストを追加
+4. `client.ts` の `PreviewResource` にも同名メソッド（`client.preview.<name>()`）を追加
+   （preview は analyze と同名・同パラメータが公開契約。片方だけの追加は不可）
+5. `types` の検証テスト（analyze / preview 共通の `describe.each`）と
+   `client.analyze.<name>()` / `client.preview.<name>()` テストを追加
+6. README（日英）の検出メソッド表を更新
 
 ## HTTP レスポンス形式が変わった場合
 

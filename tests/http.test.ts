@@ -20,7 +20,7 @@ import {
 import { HttpApiClient, parseJsonSafe } from "../src/http";
 import type { HttpApiClientConfig } from "../src/http";
 import { VERSION } from "../src/version";
-import { makeResponse } from "./helpers";
+import { makePreviewResponse, makeResponse } from "./helpers";
 
 /** 既定設定の HttpApiClient を生成する（fetch のみ差し替え） */
 const makeClient = (
@@ -149,6 +149,30 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual(body);
     expect(res).toEqual({ job_id: "j1" });
+  });
+
+  it("previewAnalysis は POST /analyze/{endpoint}/preview に JSON ボディを送る", async () => {
+    const preview = makePreviewResponse({ coverage: null });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse(200, JSON.stringify(preview)));
+    const client = makeClient(fetchMock);
+
+    const body = {
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date_start: "2026-01-01",
+      date_end: "2026-02-01",
+      satellite_id: "sentinel-1",
+    };
+    const res = await client.previewAnalysis("newbuilding", body);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      "https://api.example.com/api/v1/analyze/newbuilding/preview",
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual(body);
+    expect(res).toEqual(preview);
   });
 
   it("GET 系はボディを送らず、jobId を URL エンコードする", async () => {

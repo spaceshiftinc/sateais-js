@@ -1,6 +1,6 @@
 # @sateais/sdk
 
-**日本語** | [English](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/README.en.md)
+**日本語** | [English](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/README.en.md)
 
 SateAIs の公式 JavaScript / TypeScript SDK です。SAR 衛星画像の解析 API
 （船舶検出 / オイルスリック検出 / 新規・消失建物検出 / 時系列変化検出）に
@@ -111,6 +111,34 @@ await client.analyze.timeseries({
 > `ship` / `oilslick` は単一シーン処理のため面積上限はありません。`polygon`+`date` 指定時は
 > `date` を基準に ±14 日以内で最も近いシーンを自動選択します。
 
+### 投入前プレビュー
+
+検出メソッドと同名・同パラメータの `client.preview.<name>()` で、ジョブを投入せずに
+消費クレジットの見積もり・残高・AOI カバレッジを確認できます。プレビューでクレジットは
+消費されません。
+
+```ts
+const preview = await client.preview.newbuilding({
+  polygon: "POLYGON((...))",
+  date_start: "2026-01-01",
+  date_end: "2026-05-01",
+});
+
+console.log(preview.credits.estimated);  // 消費クレジットの見積もり（上限値）
+console.log(preview.credits.balance);    // 現在の残高
+console.log(preview.credits.sufficient); // 残高が見積もりに対して十分か
+console.log(preview.coverage?.ratio);    // AOI のシーン被覆率（0.0〜1.0）
+console.log(preview.warnings);           // LOW_AOI_COVERAGE などの警告
+```
+
+> - 残高不足はエラーになりません（`credits.sufficient: false` として返ります）。
+>   実際にジョブを投入した場合は 402（`InsufficientCreditsError`）になります。
+> - `scene_id` 指定など面積が確定しない入力ではクレジットを見積もれず、
+>   `credits.estimated` は `null`（`warnings` に `CREDITS_NOT_ESTIMABLE`）になります。
+> - 実際の消費クレジットが見積もりを上回ることはありません（見積もりは上限値）。
+> - シーン検索が失敗・該当なしの場合、`coverage` は `null` になります。
+> - プレビューが通ってもジョブ投入時に失敗する場合があります（同時実行上限 429 など）。
+
 ### ジョブ管理
 
 ```ts
@@ -175,10 +203,10 @@ try {
 
 ## 関連ドキュメント
 
-- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/docs/ARCHITECTURE.md) — 内部構造・設計方針
-- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/docs/CONTRIBUTING.md) — 開発者向けガイド
-- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/CHANGELOG.md) — 変更履歴
+- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/docs/ARCHITECTURE.md) — 内部構造・設計方針
+- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/docs/CONTRIBUTING.md) — 開発者向けガイド
+- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/CHANGELOG.md) — 変更履歴
 
 ## ライセンス
 
-MIT — [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/LICENSE) 参照。
+MIT — [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/LICENSE) 参照。

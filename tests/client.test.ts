@@ -12,14 +12,16 @@ import {
   AuthenticationError,
   JobFailedError,
   JobTimeoutError,
+  SateaisError,
 } from "../src/errors";
+import type { ApiClient } from "../src/http";
 import type {
   GeoJSONResponse,
   JobCreateResponse,
   JobStatus,
   JobStatusResponse,
 } from "../src/types";
-import { FakeApiClient, makeResponse } from "./helpers";
+import { FakeApiClient, makePreviewResponse, makeResponse } from "./helpers";
 
 /** ジョブステータスレスポンスのファクトリ */
 const jobStatus = (
@@ -47,6 +49,8 @@ const JOB_CREATE: JobCreateResponse = {
 };
 
 const GEOJSON: GeoJSONResponse = { type: "FeatureCollection", features: [] };
+
+const PREVIEW = makePreviewResponse();
 
 /** @types/node に依存せず process.env を参照する（src と同じ方針） */
 const processEnv = (
@@ -213,6 +217,73 @@ describe("検出メソッド（Fake ApiClient）", () => {
     const res = await client.analyze.ship({ scene_id: "S1A_xxx" });
     expect(res.job_id).toBe("j1");
     expect(res.status).toBe("pending");
+  });
+});
+
+describe("プレビューメソッド（Fake ApiClient）", () => {
+  let fake: FakeApiClient;
+  let client: Client;
+
+  beforeEach(() => {
+    fake = new FakeApiClient();
+    fake.previewAnalysis.mockResolvedValue(PREVIEW);
+    client = new Client({ apiClient: fake });
+  });
+
+  it("preview.ship: scene_id パターンのボディを previewAnalysis に送る（ジョブは投入しない）", async () => {
+    const res = await client.preview.ship({ scene_id: "S1A_IW_GRDH_xxx" });
+    expect(fake.previewAnalysis).toHaveBeenCalledWith("ship", {
+      scene_id: "S1A_IW_GRDH_xxx",
+      satellite_id: "sentinel-1",
+    });
+    expect(fake.submitAnalysis).not.toHaveBeenCalled();
+    expect(res).toEqual(PREVIEW);
+  });
+
+  it("preview.oilslick: polygon + date パターンのボディを送る", async () => {
+    await client.preview.oilslick({
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date: "2026-01-10",
+      date_direction: "nearest",
+    });
+    expect(fake.previewAnalysis).toHaveBeenCalledWith("oilslick", {
+      polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+      date: "2026-01-10",
+      date_direction: "nearest",
+      satellite_id: "sentinel-1",
+    });
+  });
+
+  it.each(["newbuilding", "disappearbuilding", "timeseries"] as const)(
+    "preview.%s: polygon + date_start + date_end のボディを送る",
+    async (endpoint) => {
+      await client.preview[endpoint]({
+        polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+        date_start: "2026-01-01",
+        date_end: "2026-02-01",
+      });
+      expect(fake.previewAnalysis).toHaveBeenCalledWith(endpoint, {
+        polygon: "POLYGON((0 0,1 0,1 1,0 0))",
+        date_start: "2026-01-01",
+        date_end: "2026-02-01",
+        satellite_id: "sentinel-1",
+      });
+    },
+  );
+
+  it("previewAnalysis 未実装の ApiClient（旧 Fake 等）では SateaisError を投げる", () => {
+    // previewAnalysis はオプショナルのため、旧実装は型エラーなく注入できる
+    const legacy: ApiClient = {
+      submitAnalysis: vi.fn<ApiClient["submitAnalysis"]>(),
+      getJob: vi.fn<ApiClient["getJob"]>(),
+      getJobResult: vi.fn<ApiClient["getJobResult"]>(),
+    };
+    const legacyClient = new Client({ apiClient: legacy });
+    expect(() => legacyClient.preview.ship({ scene_id: "S1A_xxx" })).toThrow(
+      SateaisError,
+    );
+    // ジョブ投入へのフォールバックはしない
+    expect(legacy.submitAnalysis).not.toHaveBeenCalled();
   });
 });
 

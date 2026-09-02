@@ -90,7 +90,9 @@ export {
 1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
 2. リクエストボディの検証ルール（必須パラメータの組合せ）を追加
 3. `client.ts` の `AnalyzeResource` に検出メソッド（`client.analyze.<name>()`）を追加
-4. テスト追加（`types` の検証 + `client.analyze.<name>()`）
+4. `client.ts` の `PreviewResource` にも同名メソッド（`client.preview.<name>()`）を追加（preview は analyze と同名・同パラメータが公開契約）
+5. テスト追加（`types` の検証は analyze / preview 共通の `describe.each` + `client.analyze.<name>()` / `client.preview.<name>()`）
+6. README（日英）の検出メソッド表を更新
 
 ### HTTP レスポンス形式が変わった
 

@@ -1,6 +1,6 @@
 # @sateais/sdk
 
-[日本語](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/README.md) | **English**
+[日本語](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/README.md) | **English**
 
 The official JavaScript / TypeScript SDK for SateAIs. It provides async/await
 programmatic access to the SAR satellite image analysis APIs (ship detection,
@@ -112,6 +112,36 @@ The `polygon` area and the date range have server-side limits (jobs exceeding th
 > `ship` / `oilslick` process a single scene, so they have no area limit. With `polygon`+`date`,
 > the nearest scene within ±14 days of `date` is selected automatically.
 
+### Pre-submission preview
+
+`client.preview.<name>()` — same method names and parameters as the analysis
+methods — returns the estimated credit consumption, your current balance, and the
+AOI coverage without submitting a job. Previews consume no credits.
+
+```ts
+const preview = await client.preview.newbuilding({
+  polygon: "POLYGON((...))",
+  date_start: "2026-01-01",
+  date_end: "2026-05-01",
+});
+
+console.log(preview.credits.estimated);  // estimated credit consumption (upper bound)
+console.log(preview.credits.balance);    // current balance
+console.log(preview.credits.sufficient); // whether the balance covers the estimate
+console.log(preview.coverage?.ratio);    // scene coverage of the AOI (0.0–1.0)
+console.log(preview.warnings);           // warnings such as LOW_AOI_COVERAGE
+```
+
+> - An insufficient balance is not an error (it is returned as
+>   `credits.sufficient: false`). Actually submitting the job would fail with 402
+>   (`InsufficientCreditsError`).
+> - For inputs whose area is not determined (e.g. `scene_id`), credits cannot be
+>   estimated: `credits.estimated` is `null` (with `CREDITS_NOT_ESTIMABLE` in `warnings`).
+> - Actual consumption never exceeds the estimate (the estimate is an upper bound).
+> - If the scene search fails or finds nothing, `coverage` is `null`.
+> - A successful preview does not guarantee submission will succeed (e.g. the
+>   concurrency limit may return 429).
+
 ### Job management
 
 ```ts
@@ -177,10 +207,10 @@ For technical inquiries, please contact [console-support@spcsft.com](mailto:cons
 
 ## Related documents
 
-- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/docs/ARCHITECTURE.md) — internal structure and design principles
-- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/docs/CONTRIBUTING.md) — contributor guide
-- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/CHANGELOG.md) — change history
+- [docs/ARCHITECTURE.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/docs/ARCHITECTURE.md) — internal structure and design principles
+- [docs/CONTRIBUTING.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/docs/CONTRIBUTING.md) — contributor guide
+- [CHANGELOG.md](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/CHANGELOG.md) — change history
 
 ## License
 
-MIT — see [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.1.0/LICENSE).
+MIT — see [LICENSE](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/LICENSE).

@@ -1,14 +1,16 @@
 /**
  * SateAIs API クライアント（ユーザー向けファサード）
  *
- * 検出（`client.analyze.ship` など）とジョブ操作（`client.jobs`）を同居させた
- * composition root。{@link ApiClient} を結線して動作する。
+ * 検出（`client.analyze.ship` など）・投入前プレビュー（`client.preview`）・
+ * ジョブ操作（`client.jobs`）を同居させた composition root。
+ * {@link ApiClient} を結線して動作する。
  */
 
 import {
   AuthenticationError,
   JobFailedError,
   JobTimeoutError,
+  SateaisError,
   ValidationError,
 } from "./errors";
 import { HttpApiClient } from "./http";
@@ -19,6 +21,7 @@ import type {
   JobCreateResponse,
   JobStatusResponse,
   PolygonPeriodParams,
+  PreviewResponse,
   SatelliteId,
   SceneAnalyzeParams,
 } from "./types";
@@ -75,6 +78,59 @@ const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * scene_id / polygon+date パターン（ship / oilslick）の必須組合せを検証し、
+ * 既定の `satellite_id` を補完したリクエストボディを構築する
+ *
+ * @param label エラーメッセージ用のメソッド表記（`analyze.ship` / `preview.ship` 等）
+ * @param params 検証対象のパラメータ
+ * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
+ */
+const buildSceneBody = (
+  label: string,
+  params: SceneAnalyzeParams,
+): Record<string, unknown> => {
+  const hasScene = "scene_id" in params && !!params.scene_id;
+  const hasPolygonDate =
+    "polygon" in params && !!params.polygon && !!params.date;
+  if (!hasScene && !hasPolygonDate) {
+    throw new ValidationError({
+      code: "VALIDATION_ERROR",
+      status: 400,
+      message: `${label} requires either 'scene_id' or both 'polygon' and 'date'`,
+    });
+  }
+  return {
+    ...params,
+    satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
+  };
+};
+
+/**
+ * polygon + 期間パターン（newbuilding / disappearbuilding / timeseries）の必須
+ * パラメータを検証し、既定の `satellite_id` を補完したリクエストボディを構築する
+ *
+ * @param label エラーメッセージ用のメソッド表記（`analyze.timeseries` 等）
+ * @param params 検証対象のパラメータ
+ * @throws {@link ValidationError} 必須パラメータが欠けている場合
+ */
+const buildPolygonPeriodBody = (
+  label: string,
+  params: PolygonPeriodParams,
+): Record<string, unknown> => {
+  if (!params.polygon || !params.date_start || !params.date_end) {
+    throw new ValidationError({
+      code: "VALIDATION_ERROR",
+      status: 400,
+      message: `${label} requires 'polygon', 'date_start', and 'date_end'`,
+    });
+  }
+  return {
+    ...params,
+    satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
+  };
+};
+
+/**
  * 検出リソース（`client.analyze`）
  *
  * 各検出エンドポイントを `client.analyze.ship(...)` のようなメソッドとして提供する。
@@ -91,7 +147,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   ship(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
-    return this.submitScene("ship", params);
+    return this.api.submitAnalysis(
+      "ship",
+      buildSceneBody("analyze.ship", params),
+    );
   }
 
   /**
@@ -102,7 +161,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   oilslick(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
-    return this.submitScene("oilslick", params);
+    return this.api.submitAnalysis(
+      "oilslick",
+      buildSceneBody("analyze.oilslick", params),
+    );
   }
 
   /**
@@ -115,7 +177,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   newbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
-    return this.submitPolygonPeriod("newbuilding", params);
+    return this.api.submitAnalysis(
+      "newbuilding",
+      buildPolygonPeriodBody("analyze.newbuilding", params),
+    );
   }
 
   /**
@@ -128,7 +193,10 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   disappearbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
-    return this.submitPolygonPeriod("disappearbuilding", params);
+    return this.api.submitAnalysis(
+      "disappearbuilding",
+      buildPolygonPeriodBody("analyze.disappearbuilding", params),
+    );
   }
 
   /**
@@ -142,49 +210,111 @@ export class AnalyzeResource {
    * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
    */
   timeseries(params: PolygonPeriodParams): Promise<JobCreateResponse> {
-    return this.submitPolygonPeriod("timeseries", params);
+    return this.api.submitAnalysis(
+      "timeseries",
+      buildPolygonPeriodBody("analyze.timeseries", params),
+    );
+  }
+}
+
+/**
+ * 投入前プレビューリソース（`client.preview`）
+ *
+ * 検出メソッドと同名・同パラメータで、ジョブを投入せずに消費クレジットの
+ * 見積もり・残高・AOI カバレッジを取得する。クレジットは消費されない。
+ * 姉妹リポ `sateais-py` の `client.preview` facade に形を揃えている。
+ *
+ * - 残高不足はエラーにならず `credits.sufficient: false` として返る
+ * - `scene_id` 指定など面積が確定しない入力ではクレジットが見積もれず、
+ *   `credits.estimated` は `null`（`warnings` に `CREDITS_NOT_ESTIMABLE`）になる
+ * - プレビューが通ってもジョブ投入時には失敗しうる（同時実行上限 429、
+ *   残高不足 402 など。実消費が見積もりを上回ることはない）
+ *
+ * 各メソッドは対応する検出メソッドと同じ検証を行い、不正な組合せは
+ * {@link ValidationError} として送信前に弾く。
+ */
+export class PreviewResource {
+  constructor(private readonly api: ApiClient) {}
+
+  /**
+   * 船舶検出（`ship`）の投入前プレビューを取得する
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.ship} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
+   */
+  ship(params: SceneAnalyzeParams): Promise<PreviewResponse> {
+    return this.dispatch("ship", buildSceneBody("preview.ship", params));
   }
 
-  /** scene_id / polygon+date パターン（ship / oilslick）の検証と投入 */
-  private submitScene(
-    endpoint: Extract<AnalysisEndpoint, "ship" | "oilslick">,
-    params: SceneAnalyzeParams,
-  ): Promise<JobCreateResponse> {
-    const hasScene = "scene_id" in params && !!params.scene_id;
-    const hasPolygonDate =
-      "polygon" in params && !!params.polygon && !!params.date;
-    if (!hasScene && !hasPolygonDate) {
-      throw new ValidationError({
-        code: "VALIDATION_ERROR",
-        status: 400,
-        message: `analyze.${endpoint} requires either 'scene_id' or both 'polygon' and 'date'`,
-      });
-    }
-    return this.api.submitAnalysis(endpoint, {
-      ...params,
-      satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
-    });
+  /**
+   * オイルスリック検出（`oilslick`）の投入前プレビューを取得する
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.oilslick} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
+   */
+  oilslick(params: SceneAnalyzeParams): Promise<PreviewResponse> {
+    return this.dispatch(
+      "oilslick",
+      buildSceneBody("preview.oilslick", params),
+    );
   }
 
-  /** polygon + 期間パターン（newbuilding / disappearbuilding / timeseries）の検証と投入 */
-  private submitPolygonPeriod(
-    endpoint: Extract<
-      AnalysisEndpoint,
-      "newbuilding" | "disappearbuilding" | "timeseries"
-    >,
-    params: PolygonPeriodParams,
-  ): Promise<JobCreateResponse> {
-    if (!params.polygon || !params.date_start || !params.date_end) {
-      throw new ValidationError({
-        code: "VALIDATION_ERROR",
-        status: 400,
-        message: `analyze.${endpoint} requires 'polygon', 'date_start', and 'date_end'`,
-      });
+  /**
+   * 新規建物検出（`newbuilding`）の投入前プレビューを取得する
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.newbuilding} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
+   */
+  newbuilding(params: PolygonPeriodParams): Promise<PreviewResponse> {
+    return this.dispatch(
+      "newbuilding",
+      buildPolygonPeriodBody("preview.newbuilding", params),
+    );
+  }
+
+  /**
+   * 消失建物検出（`disappearbuilding`）の投入前プレビューを取得する
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.disappearbuilding} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
+   */
+  disappearbuilding(params: PolygonPeriodParams): Promise<PreviewResponse> {
+    return this.dispatch(
+      "disappearbuilding",
+      buildPolygonPeriodBody("preview.disappearbuilding", params),
+    );
+  }
+
+  /**
+   * 時系列変化検出（`timeseries`）の投入前プレビューを取得する
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.timeseries} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
+   */
+  timeseries(params: PolygonPeriodParams): Promise<PreviewResponse> {
+    return this.dispatch(
+      "timeseries",
+      buildPolygonPeriodBody("preview.timeseries", params),
+    );
+  }
+
+  /**
+   * `previewAnalysis` の実装有無を確認して呼び出す
+   *
+   * `previewAnalysis` は後方互換のため {@link ApiClient} 上でオプショナル。
+   * 未実装の実装（旧 Fake 等）が注入された場合は明確なエラーで弾く。
+   */
+  private dispatch(
+    endpoint: AnalysisEndpoint,
+    body: Record<string, unknown>,
+  ): Promise<PreviewResponse> {
+    const previewAnalysis = this.api.previewAnalysis;
+    if (previewAnalysis === undefined) {
+      throw new SateaisError(
+        "The injected ApiClient does not implement previewAnalysis, so client.preview is unavailable",
+      );
     }
-    return this.api.submitAnalysis(endpoint, {
-      ...params,
-      satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
-    });
+    return previewAnalysis.call(this.api, endpoint, body);
   }
 }
 
@@ -305,12 +435,16 @@ export interface ClientOptions {
 /**
  * SateAIs REST API クライアント
  *
- * 検出ジョブの投入・状態取得・結果取得を提供する。
+ * 検出ジョブの投入・投入前プレビュー・状態取得・結果取得を提供する。
  *
  * @example
  * ```ts
  * const client = new Client({ apiKey: "sk_live_xxxxx" });
- * const job = await client.analyze.ship({ scene_id: "S1A_IW_GRDH_..." });
+ * // 投入前にクレジット見積もりを確認（polygon 指定時のみ見積もり可能）
+ * const aoi = { polygon: "POLYGON((...))", date: "2026-05-01" };
+ * const preview = await client.preview.ship(aoi);
+ * console.log(preview.credits.estimated, "credits estimated");
+ * const job = await client.analyze.ship(aoi);
  * const geojson = await client.jobs.wait(job.job_id);
  * console.log(geojson.features.length, "ships found");
  * ```
@@ -318,6 +452,8 @@ export interface ClientOptions {
 export class Client {
   /** 検出リソース（`analyze.ship` / `analyze.oilslick` など）。 */
   readonly analyze: AnalyzeResource;
+  /** 投入前プレビューリソース（`preview.ship` など。検出メソッドと同名・同パラメータ）。 */
+  readonly preview: PreviewResource;
   /** ジョブ操作リソース（状態取得・結果取得・完了待ち）。 */
   readonly jobs: JobsResource;
 
@@ -325,6 +461,7 @@ export class Client {
     const api = options.apiClient ?? Client.createHttpApiClient(options);
 
     this.analyze = new AnalyzeResource(api);
+    this.preview = new PreviewResource(api);
     this.jobs = new JobsResource(api);
   }
 
