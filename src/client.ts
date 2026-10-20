@@ -20,6 +20,7 @@ import type {
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
+  LulcParams,
   PolygonPeriodParams,
   PreviewResponse,
   SatelliteId,
@@ -31,6 +32,9 @@ const DEFAULT_BASE_URL = "https://api.spcsft.com/api/v1";
 
 /** 既定の衛星種別 */
 const DEFAULT_SATELLITE_ID: SatelliteId = "sentinel-1";
+
+/** `lulc` の既定の衛星種別（API は polygon + month パターンでこの値を必須とする） */
+const LULC_SATELLITE_ID = "sentinel-2";
 
 /** 環境変数から API キーを解決する（Node.js のみ。ブラウザでは undefined） */
 const resolveApiKeyFromEnv = (): string | undefined => {
@@ -131,6 +135,33 @@ const buildPolygonPeriodBody = (
 };
 
 /**
+ * polygon + 基準月パターン（lulc）の必須パラメータを検証し、既定の
+ * `satellite_id`（`"sentinel-2"`）を補完したリクエストボディを構築する
+ *
+ * `month` の値の妥当性（偶数月・下限・終了済み）は API 側で判定する。
+ *
+ * @param label エラーメッセージ用のメソッド表記（`analyze.lulc` / `preview.lulc`）
+ * @param params 検証対象のパラメータ
+ * @throws {@link ValidationError} 必須パラメータが欠けている場合
+ */
+const buildLulcBody = (
+  label: string,
+  params: LulcParams,
+): Record<string, unknown> => {
+  if (!params.polygon || !params.month) {
+    throw new ValidationError({
+      code: "VALIDATION_ERROR",
+      status: 400,
+      message: `${label} requires 'polygon' and 'month'`,
+    });
+  }
+  return {
+    ...params,
+    satellite_id: params.satellite_id ?? LULC_SATELLITE_ID,
+  };
+};
+
+/**
  * 検出リソース（`client.analyze`）
  *
  * 各検出エンドポイントを `client.analyze.ship(...)` のようなメソッドとして提供する。
@@ -213,6 +244,27 @@ export class AnalyzeResource {
     return this.api.submitAnalysis(
       "timeseries",
       buildPolygonPeriodBody("analyze.timeseries", params),
+    );
+  }
+
+  /**
+   * 土地利用・土地被覆分類ジョブを投入する（`lulc`）
+   *
+   * Sentinel-2 + Sentinel-1 の 12 ヶ月分の画像から、`polygon` のバウンディング
+   * ボックスを 10m 画素ごとに 15 クラスへ分類する。バウンディングボックスの面積は
+   * 0.5〜350km²、`month` は偶数月のみ（いずれも違反時は API が `ValidationError`）。
+   *
+   * 結果は GeoJSON ではなく zip のため、{@link JobsResource.waitArchive} /
+   * {@link JobsResource.resultArchive} で取得する。
+   *
+   * @param params polygon（WKT）と解析期間の最終月（`month`, `YYYY-MM`）
+   * @returns 投入されたジョブの情報（`job_id` を含む）
+   * @throws {@link ValidationError} 必須パラメータが欠けている場合
+   */
+  lulc(params: LulcParams): Promise<JobCreateResponse> {
+    return this.api.submitAnalysis(
+      "lulc",
+      buildLulcBody("analyze.lulc", params),
     );
   }
 }
@@ -299,6 +351,19 @@ export class PreviewResource {
   }
 
   /**
+   * 土地利用・土地被覆分類（`lulc`）の投入前プレビューを取得する
+   *
+   * クレジットは `polygon` のバウンディングボックスの面積で見積もられ、
+   * `area_sqkm` はその面積になる。`coverage` は常に `null`。
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.lulc} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `warnings`）
+   */
+  lulc(params: LulcParams): Promise<PreviewResponse> {
+    return this.dispatch("lulc", buildLulcBody("preview.lulc", params));
+  }
+
+  /**
    * `previewAnalysis` の実装有無を確認して呼び出す
    *
    * `previewAnalysis` は後方互換のため {@link ApiClient} 上でオプショナル。
@@ -318,6 +383,23 @@ export class PreviewResource {
   }
 }
 
+/** 結果の形式（`result_path` の拡張子で判別する） */
+type ResultKind = "geojson" | "archive";
+
+/**
+ * `result_path` から結果の形式を判定する
+ *
+ * `result_path` が無い・未知の拡張子のときは判定できないため `undefined` を返す
+ * （呼び出し側は要求どおりの形式で取得を試みる）。
+ */
+const resultKindOf = (job: JobStatusResponse): ResultKind | undefined => {
+  const path = job.result_path;
+  if (typeof path !== "string") return undefined;
+  if (path.endsWith(".zip")) return "archive";
+  if (path.endsWith(".geojson")) return "geojson";
+  return undefined;
+};
+
 /** ジョブの状態取得・結果取得・完了待ちを提供するリソース */
 export class JobsResource {
   constructor(private readonly api: ApiClient) {}
@@ -336,7 +418,8 @@ export class JobsResource {
    * ジョブの結果を GeoJSON で取得する（`GET /jobs/{job_id}/result.geojson`）
    *
    * ジョブが `completed` になっている必要がある。保持期間（30日）を過ぎると
-   * {@link NotFoundError}（`410 GONE`）になる。
+   * {@link NotFoundError}（`410 GONE`）になる。`lulc` の結果は zip のため
+   * {@link JobsResource.resultArchive} を使う。
    *
    * @param jobId ジョブ UUID
    * @returns GeoJSON FeatureCollection
@@ -346,11 +429,43 @@ export class JobsResource {
   }
 
   /**
+   * ジョブの結果アーカイブ（zip）をバイト列で取得する（`GET /jobs/{job_id}/result.zip`）
+   *
+   * `lulc` など結果がファイル一式のジョブ用。`lulc` の zip には `classes.tif`
+   * （分類ラスタ）・`class_stats.json`（クラス別面積）・`legend.json`（凡例）・
+   * `visual.png`（確認用の描画）が入る。ジョブが `completed` でないと
+   * {@link SateaisApiError}（`409 JOB_NOT_COMPLETED`）、保持期間（30日）を過ぎると
+   * {@link NotFoundError}（`410 GONE`）になる。
+   *
+   * @example
+   * ```ts
+   * import { writeFile } from "node:fs/promises";
+   * const zip = await client.jobs.resultArchive(jobId);
+   * await writeFile("result.zip", zip);
+   * ```
+   *
+   * @param jobId ジョブ UUID
+   * @returns zip ファイルのバイト列
+   * @throws {@link SateaisError} 注入された `ApiClient` が `getJobResultArchive` を実装していない場合
+   */
+  resultArchive(jobId: string): Promise<Uint8Array> {
+    const getJobResultArchive = this.api.getJobResultArchive;
+    if (getJobResultArchive === undefined) {
+      throw new SateaisError(
+        "The injected ApiClient does not implement getJobResultArchive, so client.jobs.resultArchive is unavailable",
+      );
+    }
+    return getJobResultArchive.call(this.api, jobId);
+  }
+
+  /**
    * ジョブが `completed` になるまでポーリングし、結果 GeoJSON を返す
    *
    * `completed` になったら自動で結果を取得して返す。`failed` に遷移した場合は
    * `errorCode` / `errorMessage` を載せた {@link JobFailedError} を送出する。
    * `timeoutMs` を超過した場合は {@link JobTimeoutError} を送出する。
+   * 結果が zip のジョブ（`lulc`）では {@link SateaisError} を送出するため、
+   * {@link JobsResource.waitArchive} を使う。
    *
    * @param jobId ジョブ UUID
    * @param options ポーリング間隔・タイムアウト・コールバック
@@ -360,6 +475,52 @@ export class JobsResource {
     jobId: string,
     options: WaitOptions = {},
   ): Promise<GeoJSONResponse> {
+    const job = await this.waitUntilCompleted(jobId, options);
+    if (resultKindOf(job) === "archive") {
+      throw new SateaisError(
+        `Job ${jobId} produces a zip archive (${job.result_path}), not GeoJSON. Use client.jobs.waitArchive or client.jobs.resultArchive instead`,
+      );
+    }
+    return this.api.getJobResult(jobId);
+  }
+
+  /**
+   * ジョブが `completed` になるまでポーリングし、結果アーカイブ（zip）を返す
+   *
+   * `lulc` など結果がファイル一式のジョブ用。ポーリング・失敗・タイムアウトの
+   * 扱いは {@link JobsResource.wait} と同じ。結果が GeoJSON のジョブでは
+   * {@link SateaisError} を送出するため、{@link JobsResource.wait} を使う。
+   *
+   * @param jobId ジョブ UUID
+   * @param options ポーリング間隔・タイムアウト・コールバック
+   * @returns 完了したジョブの zip ファイルのバイト列
+   */
+  async waitArchive(
+    jobId: string,
+    options: WaitOptions = {},
+  ): Promise<Uint8Array> {
+    const job = await this.waitUntilCompleted(jobId, options);
+    if (resultKindOf(job) === "geojson") {
+      throw new SateaisError(
+        `Job ${jobId} produces GeoJSON (${job.result_path}), not a zip archive. Use client.jobs.wait or client.jobs.result instead`,
+      );
+    }
+    return this.resultArchive(jobId);
+  }
+
+  /**
+   * ジョブが `completed` になるまでポーリングし、完了時のステータスを返す
+   *
+   * @param jobId ジョブ UUID
+   * @param options ポーリング間隔・タイムアウト・コールバック
+   * @returns `completed` になったジョブのステータス
+   * @throws {@link JobFailedError} `failed` などの終端ステータスに遷移した場合
+   * @throws {@link JobTimeoutError} `timeoutMs` を超過した場合
+   */
+  private async waitUntilCompleted(
+    jobId: string,
+    options: WaitOptions,
+  ): Promise<JobStatusResponse> {
     const intervalMs = options.intervalMs ?? 60_000;
     const timeoutMs = options.timeoutMs ?? Number.POSITIVE_INFINITY;
     const start = Date.now();
@@ -369,7 +530,7 @@ export class JobsResource {
       options.onPoll?.(job);
 
       if (job.status === "completed") {
-        return this.api.getJobResult(jobId);
+        return job;
       }
       if (job.status === "failed") {
         throw new JobFailedError({
@@ -450,7 +611,7 @@ export interface ClientOptions {
  * ```
  */
 export class Client {
-  /** 検出リソース（`analyze.ship` / `analyze.oilslick` など）。 */
+  /** 検出リソース（`analyze.ship` / `analyze.lulc` など）。 */
   readonly analyze: AnalyzeResource;
   /** 投入前プレビューリソース（`preview.ship` など。検出メソッドと同名・同パラメータ）。 */
   readonly preview: PreviewResource;

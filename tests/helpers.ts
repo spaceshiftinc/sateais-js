@@ -22,6 +22,8 @@ export class FakeApiClient implements ApiClient {
   previewAnalysis = vi.fn<NonNullable<ApiClient["previewAnalysis"]>>();
   getJob = vi.fn<ApiClient["getJob"]>();
   getJobResult = vi.fn<ApiClient["getJobResult"]>();
+  // getJobResultArchive も interface 上オプショナル
+  getJobResultArchive = vi.fn<NonNullable<ApiClient["getJobResultArchive"]>>();
 }
 
 /**
@@ -60,18 +62,22 @@ export const makePreviewResponse = (
  * `ok` は `status` から導出する。`fetch` の戻り値として差し替えて利用する。
  *
  * @param status HTTP ステータスコード
- * @param body レスポンスボディ（`text()` で解決される）
+ * @param body レスポンスボディ（`text()` で文字列、`arrayBuffer()` でバイト列として解決される）
  * @param statusText ステータステキスト。既定は空文字。
  * @returns `Response` 互換のモック
  */
 export const makeResponse = (
   status: number,
-  body: string,
+  body: string | Uint8Array,
   statusText = "",
-): Response =>
-  ({
+): Response => {
+  const bytes =
+    typeof body === "string" ? new TextEncoder().encode(body) : body;
+  return {
     ok: status >= 200 && status < 300,
     status,
     statusText,
-    text: () => Promise.resolve(body),
-  }) as unknown as Response;
+    text: () => Promise.resolve(new TextDecoder().decode(bytes)),
+    arrayBuffer: () => Promise.resolve(bytes.slice().buffer),
+  } as unknown as Response;
+};

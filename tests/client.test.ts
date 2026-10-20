@@ -50,6 +50,15 @@ const JOB_CREATE: JobCreateResponse = {
 
 const GEOJSON: GeoJSONResponse = { type: "FeatureCollection", features: [] };
 
+/** zip ファイル先頭のマジックナンバー（`PK\x03\x04`） */
+const ZIP_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+/** lulc の検出パラメータ */
+const LULC_PARAMS = {
+  polygon: "POLYGON((136.27 36.23,136.37 36.23,136.37 36.33,136.27 36.23))",
+  month: "2026-08",
+};
+
 const PREVIEW = makePreviewResponse();
 
 /** @types/node に依存せず process.env を参照する（src と同じ方針） */
@@ -213,6 +222,14 @@ describe("検出メソッド（Fake ApiClient）", () => {
     },
   );
 
+  it("lulc: polygon + month のボディに satellite_id=sentinel-2 を補完して送る", async () => {
+    await client.analyze.lulc(LULC_PARAMS);
+    expect(fake.submitAnalysis).toHaveBeenCalledWith("lulc", {
+      ...LULC_PARAMS,
+      satellite_id: "sentinel-2",
+    });
+  });
+
   it("レスポンスが JobCreateResponse として返る", async () => {
     const res = await client.analyze.ship({ scene_id: "S1A_xxx" });
     expect(res.job_id).toBe("j1");
@@ -271,6 +288,15 @@ describe("プレビューメソッド（Fake ApiClient）", () => {
     },
   );
 
+  it("preview.lulc: polygon + month のボディを送る（ジョブは投入しない）", async () => {
+    await client.preview.lulc(LULC_PARAMS);
+    expect(fake.previewAnalysis).toHaveBeenCalledWith("lulc", {
+      ...LULC_PARAMS,
+      satellite_id: "sentinel-2",
+    });
+    expect(fake.submitAnalysis).not.toHaveBeenCalled();
+  });
+
   it("previewAnalysis 未実装の ApiClient（旧 Fake 等）では SateaisError を投げる", () => {
     // previewAnalysis はオプショナルのため、旧実装は型エラーなく注入できる
     const legacy: ApiClient = {
@@ -308,6 +334,23 @@ describe("JobsResource: status / result", () => {
     const res = await client.jobs.result("j1");
     expect(fake.getJobResult).toHaveBeenCalledWith("j1");
     expect(res).toEqual(GEOJSON);
+  });
+
+  it("resultArchive(id) が getJobResultArchive を叩き zip のバイト列を返す", async () => {
+    fake.getJobResultArchive.mockResolvedValue(ZIP_BYTES);
+    const res = await client.jobs.resultArchive("j1");
+    expect(fake.getJobResultArchive).toHaveBeenCalledWith("j1");
+    expect(res).toEqual(ZIP_BYTES);
+  });
+
+  it("getJobResultArchive 未実装の ApiClient では resultArchive が SateaisError を投げる", () => {
+    const legacy: ApiClient = {
+      submitAnalysis: vi.fn<ApiClient["submitAnalysis"]>(),
+      getJob: vi.fn<ApiClient["getJob"]>(),
+      getJobResult: vi.fn<ApiClient["getJobResult"]>(),
+    };
+    const legacyClient = new Client({ apiClient: legacy });
+    expect(() => legacyClient.jobs.resultArchive("j1")).toThrow(SateaisError);
   });
 });
 
@@ -443,5 +486,89 @@ describe("JobsResource.wait（fake timers）", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await promise;
     expect(fake.getJob).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("JobsResource: 結果形式の取り違え（fake timers）", () => {
+  let fake: FakeApiClient;
+  let client: Client;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fake = new FakeApiClient();
+    client = new Client({ apiClient: fake });
+  });
+
+  it("waitArchive: completed で zip のバイト列を返す", async () => {
+    fake.getJob
+      .mockResolvedValueOnce(jobStatus("processing"))
+      .mockResolvedValueOnce(
+        jobStatus("completed", { result_path: "/api/v1/jobs/j1/result.zip" }),
+      );
+    fake.getJobResultArchive.mockResolvedValue(ZIP_BYTES);
+
+    const promise = client.jobs.waitArchive("j1", { intervalMs: 1_000 });
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual(ZIP_BYTES);
+    expect(fake.getJob).toHaveBeenCalledTimes(2);
+    expect(fake.getJobResult).not.toHaveBeenCalled();
+  });
+
+  it("waitArchive: failed で JobFailedError を投げる（wait と同じ扱い）", async () => {
+    fake.getJob.mockResolvedValue(
+      jobStatus("failed", { error_code: "INFERENCE_FAILED" }),
+    );
+
+    const promise = client.jobs
+      .waitArchive("j1", { intervalMs: 1_000 })
+      .catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+
+    expect(await promise).toBeInstanceOf(JobFailedError);
+    expect(fake.getJobResultArchive).not.toHaveBeenCalled();
+  });
+
+  it("wait: 結果が zip のジョブでは GeoJSON を取りに行かず SateaisError を投げる", async () => {
+    fake.getJob.mockResolvedValue(
+      jobStatus("completed", { result_path: "/api/v1/jobs/j1/result.zip" }),
+    );
+
+    const promise = client.jobs.wait("j1").catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    const err = await promise;
+
+    expect(err).toBeInstanceOf(SateaisError);
+    expect((err as SateaisError).message).toContain("waitArchive");
+    expect(fake.getJobResult).not.toHaveBeenCalled();
+  });
+
+  it("waitArchive: 結果が GeoJSON のジョブでは zip を取りに行かず SateaisError を投げる", async () => {
+    fake.getJob.mockResolvedValue(
+      jobStatus("completed", {
+        result_path: "/api/v1/jobs/j1/result.geojson",
+      }),
+    );
+
+    const promise = client.jobs.waitArchive("j1").catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    const err = await promise;
+
+    expect(err).toBeInstanceOf(SateaisError);
+    expect((err as SateaisError).message).toContain("client.jobs.wait");
+    expect(fake.getJobResultArchive).not.toHaveBeenCalled();
+  });
+
+  it("result_path が無い completed ジョブは要求どおりの形式で取得する", async () => {
+    fake.getJob.mockResolvedValue(jobStatus("completed"));
+    fake.getJobResult.mockResolvedValue(GEOJSON);
+    fake.getJobResultArchive.mockResolvedValue(ZIP_BYTES);
+
+    const geojson = client.jobs.wait("j1");
+    const zip = client.jobs.waitArchive("j1");
+    await vi.runAllTimersAsync();
+
+    await expect(geojson).resolves.toEqual(GEOJSON);
+    await expect(zip).resolves.toEqual(ZIP_BYTES);
   });
 });

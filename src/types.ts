@@ -11,9 +11,15 @@ export type AnalysisEndpoint =
   | "oilslick"
   | "newbuilding"
   | "disappearbuilding"
-  | "timeseries";
+  | "timeseries"
+  | "lulc";
 
-/** 衛星種別（現状は Sentinel-1 のみ対応） */
+/**
+ * 衛星種別（Sentinel-1 SAR 検出用）
+ *
+ * `lulc` は Sentinel-2 + Sentinel-1 を併用するため別型（{@link LulcParams} の
+ * `satellite_id`）で扱う。
+ */
 export type SatelliteId = "sentinel-1";
 
 /** 軌道方向 */
@@ -86,6 +92,31 @@ export interface PolygonPeriodParams {
 }
 
 /**
+ * `lulc`（土地利用・土地被覆分類）のリクエストパラメータ
+ *
+ * polygon + 基準月パターンのみ。解析期間は `month` で終わる 12 ヶ月
+ * （`"2026-08"` なら 2025-09-01〜2026-08-31）で、Sentinel-2 L2A と
+ * Sentinel-1 RTC を併用して 10m 画素ごとに 15 クラスへ分類する。
+ *
+ * - `polygon` の **バウンディングボックス** 全体が解析・課金対象（0.5〜350km²）
+ * - `month` は偶数月のみ・`2018-02` 以降・終了済みの月（いずれも違反時は API が `ValidationError`）
+ * - 結果は GeoJSON ではなく `.zip`（`classes.tif` / `class_stats.json` / `legend.json` / `visual.png`）。
+ *   `client.jobs.resultArchive()` / `client.jobs.waitArchive()` で取得する
+ */
+export interface LulcParams {
+  /**
+   * 衛星種別。省略時は `"sentinel-2"`。
+   *
+   * 内部では Sentinel-1 も併用するが、権限判定のため名目上 `"sentinel-2"` 固定。
+   */
+  satellite_id?: "sentinel-2";
+  /** AOI ポリゴン（WKT, EPSG:4326）。バウンディングボックスが解析される。 */
+  polygon: string;
+  /** 12 ヶ月の解析期間の最終月（`YYYY-MM`、偶数月のみ）。 */
+  month: string;
+}
+
+/**
  * 検出ジョブ投入レスポンス（`POST /analyze/{endpoint}`）
  */
 export interface JobCreateResponse {
@@ -97,7 +128,7 @@ export interface JobCreateResponse {
   created_at: string;
   /** 完了日時（ISO 8601）。未完了時は `null`。 */
   completed_at: string | null;
-  /** 結果 GeoJSON のダウンロードパス。未完了時は `null`。 */
+  /** 結果のダウンロードパス（`result.geojson`、`lulc` は `result.zip`）。未完了時は `null`。 */
   result_path: string | null;
   /** エラー情報（`pending` 時は `null`）。 */
   error: string | null;
@@ -116,7 +147,10 @@ export interface JobStatusResponse {
   created_at: string;
   /** 完了日時（ISO 8601）。`pending` / `processing` 時は `null`。 */
   completed_at: string | null;
-  /** 結果 GeoJSON のダウンロードパス。`completed` 以外では `null`。 */
+  /**
+   * 結果のダウンロードパス（`result.geojson`、`lulc` は `result.zip`）。
+   * `completed` 以外では `null`。
+   */
   result_path: string | null;
   /** 機械可読なエラーコード（`failed` 時）。 */
   error_code: string | null;
@@ -219,7 +253,10 @@ export interface PreviewResponse {
   endpoint_id: string;
   /** 実際に解析される面積の見込み（km²）。算出できない場合は `null`。 */
   area_sqkm: number | null;
-  /** AOI カバレッジ情報。シーン検索が失敗・該当なしの場合は `null`。 */
+  /**
+   * AOI カバレッジ情報。シーン検索が失敗・該当なしの場合は `null`。
+   * `lulc` はバウンディングボックス全体を分類するため常に `null`。
+   */
   coverage: Coverage | null;
   /** クレジットの見積もりと残高。 */
   credits: PreviewCredits;

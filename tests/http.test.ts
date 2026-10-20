@@ -192,6 +192,61 @@ describe("HttpApiClient: ヘッダ・URL・ボディ", () => {
     );
   });
 
+  it("getJobResultArchive は GET /jobs/{id}/result.zip のボディをバイト列で返す", async () => {
+    // JSON として解釈できないバイト列（zip ヘッダ + 不正な UTF-8）
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xff, 0x00]);
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse(200, bytes));
+    const client = makeClient(fetchMock);
+
+    const res = await client.getJobResultArchive("a/b c");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      "https://api.example.com/api/v1/jobs/a%2Fb%20c/result.zip",
+    );
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect(init.headers["Content-Type"]).toBeUndefined();
+    expect(res).toBeInstanceOf(Uint8Array);
+    expect(Array.from(res)).toEqual(Array.from(bytes));
+  });
+
+  it("getJobResultArchive は非 OK レスポンスをエラー envelope どおりに変換する", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse(
+        409,
+        JSON.stringify({
+          error: {
+            code: "JOB_NOT_COMPLETED",
+            message: "Job is not completed yet (current status: processing)",
+          },
+        }),
+      ),
+    );
+    const client = makeClient(fetchMock);
+
+    const err = await client.getJobResultArchive("j1").catch((e) => e);
+    expect(err).toBeInstanceOf(SateaisApiError);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe("JOB_NOT_COMPLETED");
+  });
+
+  it("getJobResultArchive の 410 は NotFoundError になる", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeResponse(
+          410,
+          JSON.stringify({ error: { code: "GONE", message: "expired" } }),
+        ),
+      );
+    const client = makeClient(fetchMock);
+
+    await expect(client.getJobResultArchive("j1")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
   it("NaN を含む 200 レスポンスを安全にパースする", async () => {
     const fetchMock = vi
       .fn()

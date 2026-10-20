@@ -4,7 +4,7 @@
 
 ## プロジェクト概要
 
-**`@sateais/sdk`** — SateAIs（SAR 衛星画像解析プラットフォーム、現状の対応衛星は Sentinel-1）の公式 JavaScript / TypeScript SDK。
+**`@sateais/sdk`** — SateAIs（衛星画像解析プラットフォーム、現状の対応衛星は Sentinel-1。土地利用・土地被覆分類 `lulc` のみ Sentinel-2 + Sentinel-1）の公式 JavaScript / TypeScript SDK。
 
 - `npm install @sateais/sdk`（ローカル install 含む）1 つで **SDK** を提供する
 - CLI は MVP スコープ外（姉妹リポ [`sateais-py`](https://github.com/spaceshiftinc/sateais-py/tree/v0.1.0) は SDK + CLI 同梱だが、本リポは SDK のみ）

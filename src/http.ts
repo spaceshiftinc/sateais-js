@@ -53,6 +53,14 @@ export interface ApiClient {
   getJob(jobId: string): Promise<JobStatusResponse>;
   /** ジョブの結果を GeoJSON で取得する（`GET /jobs/{job_id}/result.geojson`）。 */
   getJobResult(jobId: string): Promise<GeoJSONResponse>;
+  /**
+   * ジョブの結果アーカイブ（zip）をバイト列で取得する（`GET /jobs/{job_id}/result.zip`）。
+   *
+   * `lulc` など GeoJSON ではなくファイル一式を返すジョブ用。後方互換のため
+   * オプショナル（既存の `ApiClient` 実装を壊さない）。未実装の実装で
+   * `client.jobs.resultArchive()` / `waitArchive()` を呼ぶと {@link SateaisError} になる。
+   */
+  getJobResultArchive?(jobId: string): Promise<Uint8Array>;
 }
 
 /** {@link HttpApiClient} の設定 */
@@ -170,6 +178,42 @@ const mapApiError = (
   return new SateaisApiError(options);
 };
 
+/**
+ * 成功レスポンスのボディを JSON としてパースする
+ *
+ * 204 / 205 や空ボディの 2xx は「正常な空応答」として `undefined` を返す。
+ *
+ * @param response 2xx のレスポンス
+ * @throws {@link ResponseParseError} ボディが JSON でない場合
+ */
+const readJsonBody = async <T>(response: Response): Promise<T> => {
+  const text = await response.text();
+  if (
+    response.status === 204 ||
+    response.status === 205 ||
+    text.trim() === ""
+  ) {
+    return undefined as T;
+  }
+  try {
+    return parseJsonSafe<T>(text);
+  } catch (parseError) {
+    // 成功レスポンスのボディが非 JSON の場合、生の SyntaxError を
+    // ネットワークエラー扱いにせず ResponseParseError として送出する
+    // （API のアプリケーションエラーではなく transport / パース層の問題）
+    const detail =
+      parseError instanceof Error ? parseError.message : String(parseError);
+    throw new ResponseParseError({
+      status: response.status,
+      message: `Invalid JSON in response body: ${detail}`,
+    });
+  }
+};
+
+/** 成功レスポンスのボディをバイト列として読む */
+const readBinaryBody = async (response: Response): Promise<Uint8Array> =>
+  new Uint8Array(await response.arrayBuffer());
+
 /** 標準 `fetch` を用いた {@link ApiClient} の具体実装 */
 export class HttpApiClient implements ApiClient {
   private readonly config: HttpApiClientConfig;
@@ -214,6 +258,15 @@ export class HttpApiClient implements ApiClient {
     );
   }
 
+  getJobResultArchive(jobId: string): Promise<Uint8Array> {
+    return this.request(
+      "GET",
+      `/jobs/${encodeURIComponent(jobId)}/result.zip`,
+      undefined,
+      readBinaryBody,
+    );
+  }
+
   /**
    * 認証・共通ヘッダーを生成する
    *
@@ -233,20 +286,23 @@ export class HttpApiClient implements ApiClient {
   }
 
   /**
-   * リクエストを送信し、JSON レスポンスをパースして返す
+   * リクエストを送信し、成功レスポンスのボディを読んで返す
    *
    * 非 OK レスポンスはエラー envelope を解釈して {@link SateaisApiError} 系に変換する。
    * ネットワークエラー・タイムアウトは {@link SateaisError} に変換する（リトライしない）。
+   * タイムアウトはボディの読み出し完了までを対象にする。
    *
    * @param method HTTP メソッド
    * @param path ベース URL からの相対パス（先頭スラッシュ付き）
    * @param body リクエストボディ（GET では省略）
-   * @returns パース済みレスポンス
+   * @param readBody 成功レスポンスのボディの読み方。既定は JSON パース
+   * @returns 読み出したレスポンスボディ
    */
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
+    readBody: (response: Response) => Promise<T> = readJsonBody,
   ): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
     const hasBody = body !== undefined;
@@ -269,30 +325,8 @@ export class HttpApiClient implements ApiClient {
       });
 
       if (response.ok) {
-        const text = await response.text();
-        // 204 / 205 や空ボディの 2xx は「正常な空応答」として扱う
-        if (
-          response.status === 204 ||
-          response.status === 205 ||
-          text.trim() === ""
-        ) {
-          return undefined as T;
-        }
-        try {
-          return parseJsonSafe<T>(text);
-        } catch (parseError) {
-          // 成功レスポンスのボディが非 JSON の場合、生の SyntaxError を
-          // ネットワークエラー扱いにせず ResponseParseError として送出する
-          // （API のアプリケーションエラーではなく transport / パース層の問題）
-          const detail =
-            parseError instanceof Error
-              ? parseError.message
-              : String(parseError);
-          throw new ResponseParseError({
-            status: response.status,
-            message: `Invalid JSON in response body: ${detail}`,
-          });
-        }
+        // return await にしないと読み出し中の失敗が下の catch を素通りする
+        return await readBody(response);
       }
 
       throw await this.toApiError(response);
