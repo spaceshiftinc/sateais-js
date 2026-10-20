@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- SDK: 土地利用・土地被覆分類 `client.analyze.lulc(...)` / `client.preview.lulc(...)` を追加（`POST /analyze/lulc`）。Sentinel-2 + Sentinel-1 の 12 ヶ月分の画像から polygon のバウンディングボックスを 15 クラスに分類する。入力は `polygon` + `month`（`YYYY-MM`、偶数月のみ）で、`satellite_id` は省略時 `"sentinel-2"` を補完する
+- SDK: 結果が zip のジョブ用に `client.jobs.resultArchive(jobId)` / `client.jobs.waitArchive(jobId, options)` を追加（`GET /jobs/{job_id}/result.zip`、戻り値は `Uint8Array`）
+- 型: `LulcParams` を追加。`AnalysisEndpoint` に `"lulc"` を追加
+- `ApiClient` interface に**オプショナル**メソッド `getJobResultArchive?()` を追加（後方互換。既存の独自実装・テスト用 Fake はそのまま動作する）。未実装の `ApiClient` で `client.jobs.resultArchive()` / `waitArchive()` を呼んだ場合は `SateaisError` を送出する
+
+### Changed
+
+- `client.jobs.wait()` は、完了したジョブの `result_path` が zip（`lulc` など）を指す場合、GeoJSON を取りに行かず `SateaisError` を送出して `waitArchive` を案内する（従来は `ResponseParseError` 等の分かりにくいエラーになっていた）
+
 ## [0.2.0] - 2026-09-02
 
 投入前プレビュー対応。後方互換のマイナーリリース（既存 API に破壊的変更なし）。

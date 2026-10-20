@@ -97,10 +97,47 @@ describe.each(["analyze", "preview"] as const)(
   },
 );
 
+describe.each(["analyze", "preview"] as const)(
+  "検証: %s — lulc（polygon+month）",
+  (resource) => {
+    it("month が無いと ValidationError", () => {
+      const { client, fake } = makeClient();
+      expect(() =>
+        // @ts-expect-error month 欠落
+        client[resource].lulc({ polygon: "POLYGON((0 0))" }),
+      ).toThrow(ValidationError);
+      expect(fake.submitAnalysis).not.toHaveBeenCalled();
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    });
+
+    it("polygon が空なら ValidationError", () => {
+      const { client } = makeClient();
+      expect(() =>
+        client[resource].lulc({ polygon: "", month: "2026-08" }),
+      ).toThrow(ValidationError);
+    });
+
+    it("satellite_id に sentinel-1 は型で拒否される", () => {
+      const { client } = makeClient();
+      client[resource].lulc({
+        polygon: "POLYGON((0 0))",
+        month: "2026-08",
+        // @ts-expect-error lulc の satellite_id は "sentinel-2" のみ
+        satellite_id: "sentinel-1",
+      });
+    });
+  },
+);
+
 describe("型: public API の判別・戻り値型", () => {
-  it("AnalysisEndpoint は 5 種の文字列リテラル", () => {
+  it("AnalysisEndpoint は 6 種の文字列リテラル", () => {
     expectTypeOf<AnalysisEndpoint>().toEqualTypeOf<
-      "ship" | "oilslick" | "newbuilding" | "disappearbuilding" | "timeseries"
+      | "ship"
+      | "oilslick"
+      | "newbuilding"
+      | "disappearbuilding"
+      | "timeseries"
+      | "lulc"
     >();
   });
 
@@ -112,6 +149,9 @@ describe("型: public API の判別・戻り値型", () => {
     expectTypeOf(
       client.analyze.newbuilding,
     ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
+    expectTypeOf(
+      client.analyze.lulc,
+    ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
   });
 
   it("プレビューメソッドの戻り値は Promise<PreviewResponse>", () => {
@@ -122,9 +162,12 @@ describe("型: public API の判別・戻り値型", () => {
     expectTypeOf(
       client.preview.timeseries,
     ).returns.resolves.toEqualTypeOf<PreviewResponse>();
+    expectTypeOf(
+      client.preview.lulc,
+    ).returns.resolves.toEqualTypeOf<PreviewResponse>();
   });
 
-  it("jobs.status / result / wait の戻り値型", () => {
+  it("jobs.status / result / wait / resultArchive / waitArchive の戻り値型", () => {
     const client = new Client({ apiClient: new FakeApiClient() });
     expectTypeOf(
       client.jobs.status,
@@ -135,6 +178,12 @@ describe("型: public API の判別・戻り値型", () => {
     expectTypeOf(
       client.jobs.wait,
     ).returns.resolves.toEqualTypeOf<GeoJSONResponse>();
+    expectTypeOf(
+      client.jobs.resultArchive,
+    ).returns.resolves.toEqualTypeOf<Uint8Array>();
+    expectTypeOf(
+      client.jobs.waitArchive,
+    ).returns.resolves.toEqualTypeOf<Uint8Array>();
   });
 
   it("analyze.ship は scene_id 単独・polygon+date の双方を受け付ける", () => {

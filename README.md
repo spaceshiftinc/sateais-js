@@ -2,10 +2,11 @@
 
 **日本語** | [English](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/README.en.md)
 
-SateAIs の公式 JavaScript / TypeScript SDK です。SAR 衛星画像の解析 API
-（船舶検出 / オイルスリック検出 / 新規・消失建物検出 / 時系列変化検出）に
-async/await でプログラムからアクセスできます。
-現在の対応衛星は Sentinel-1 で、今後順次拡張を予定しています。
+SateAIs の公式 JavaScript / TypeScript SDK です。衛星画像の解析 API
+（船舶検出 / オイルスリック検出 / 新規・消失建物検出 / 時系列変化検出 /
+土地利用・土地被覆分類）に async/await でプログラムからアクセスできます。
+現在の対応衛星は Sentinel-1（土地利用・土地被覆分類のみ Sentinel-2 + Sentinel-1）で、
+今後順次拡張を予定しています。
 
 ```bash
 npm install @sateais/sdk
@@ -71,8 +72,9 @@ API キーが解決できない場合は `AuthenticationError` が送出され�
 | `client.analyze.newbuilding(...)` | `polygon`+`date_start`+`date_end` |
 | `client.analyze.disappearbuilding(...)` | 同上 |
 | `client.analyze.timeseries(...)` | 同上 |
+| `client.analyze.lulc(...)` | `polygon`+`month` |
 
-入力パターンは 2 系統あります。
+入力パターンは 3 系統あります。
 
 ```ts
 // scene_id 系（ship / oilslick）: シーンID指定、または polygon + 単一日付
@@ -93,9 +95,19 @@ await client.analyze.timeseries({
   date_end: "2026-05-01",
   orbit_direction: "ascending",       // 任意
 });
+
+// polygon + 基準月 系（lulc: 土地利用・土地被覆分類）
+await client.analyze.lulc({
+  satellite_id: "sentinel-2",         // 任意（lulc は "sentinel-2" 固定）
+  polygon: "POLYGON((...))",          // WKT。バウンディングボックスが解析対象
+  month: "2026-08",                   // 12 ヶ月の解析期間の最終月（偶数月のみ）
+});
 ```
 
-`satellite_id` の現状の対応値は `"sentinel-1"` です。戻り値は `JobCreateResponse`
+`satellite_id` は `lulc` 以外では `"sentinel-1"`、`lulc` では `"sentinel-2"` です
+（省略時はそれぞれ自動で補完されます）。`lulc` は Sentinel-2 L2A と Sentinel-1 RTC を
+併用して 10m 画素ごとに 15 クラスへ分類し、結果は GeoJSON ではなく zip で返ります
+（[ジョブ管理](#ジョブ管理) を参照）。戻り値は `JobCreateResponse`
 （`job_id` / `status` / `created_at` 等）。詳細パラメータは
 [API リファレンス](https://docs.spcsft.com/) を参照してください。
 
@@ -107,9 +119,15 @@ await client.analyze.timeseries({
 | --- | --- | --- |
 | `newbuilding` / `disappearbuilding` | 30000 km² | — |
 | `timeseries` | 50 km² | `date_start`〜`date_end` は 3 年以内 |
+| `lulc` | 0.5〜350 km²（**バウンディングボックス**の面積） | `month` は偶数月のみ・`2018-02` 以降・終了済みの月 |
 
 > `ship` / `oilslick` は単一シーン処理のため面積上限はありません。`polygon`+`date` 指定時は
 > `date` を基準に ±14 日以内で最も近いシーンを自動選択します。
+>
+> `lulc` は `polygon` そのものではなく **バウンディングボックス全体** を分類・課金します。
+> 細長い・斜めのポリゴンは面積が小さくてもバウンディングボックスが大きくなるため、
+> AOI は矩形に近い形で指定してください。解析期間は `month` で終わる 12 ヶ月です
+> （`"2026-08"` なら 2025-09-01〜2026-08-31）。
 
 ### 投入前プレビュー
 
@@ -137,6 +155,8 @@ console.log(preview.warnings);           // LOW_AOI_COVERAGE などの警告
 >   `credits.estimated` は `null`（`warnings` に `CREDITS_NOT_ESTIMABLE`）になります。
 > - 実際の消費クレジットが見積もりを上回ることはありません（見積もりは上限値）。
 > - シーン検索が失敗・該当なしの場合、`coverage` は `null` になります。
+> - `lulc` はバウンディングボックス全体を分類するため `coverage` は常に `null` で、
+>   `area_sqkm` はバウンディングボックスの面積（課金対象の面積）です。
 > - プレビューが通ってもジョブ投入時に失敗する場合があります（同時実行上限 429 など）。
 
 ### ジョブ管理
@@ -158,6 +178,34 @@ const geojson = await client.jobs.wait(jobId, {
 > `jobs.wait` は `completed` で結果を返し、`failed` および `cancelled` / `expired`
 > などの終端ステータス（未知のステータスを含む）では `JobFailedError` を送出して
 > ポーリングを止めます。`timeoutMs` は未指定で無制限です。
+
+#### zip で結果を返すジョブ（lulc）
+
+`lulc` の結果は GeoJSON ではなく zip です。`jobs.resultArchive` / `jobs.waitArchive` で
+zip のバイト列（`Uint8Array`）を取得します。ポーリングのオプションと例外は `jobs.wait` と同じです。
+
+```ts
+import { writeFile } from "node:fs/promises";
+
+const job = await client.analyze.lulc({ polygon: "POLYGON((...))", month: "2026-08" });
+const zip = await client.jobs.waitArchive(job.job_id); // 完了までポーリングして zip を取得
+await writeFile("lulc.zip", zip);
+
+const zip2 = await client.jobs.resultArchive(jobId);    // 完了済ジョブの zip を取得
+```
+
+| zip 内のファイル | 内容 |
+| --- | --- |
+| `classes.tif` | 分類ラスタ（`uint8`・1 バンド・10m 画素、AOI の UTM 座標系）。クラス ID `1`〜`15`、`0` は NoData。カラーマップ埋め込み済み |
+| `class_stats.json` | 出現したクラスごとの画素数・面積（km²）・割合 |
+| `legend.json` | 全 15 クラスの ID・名称（`name` 日本語 / `name_en` 英語）・色 |
+| `visual.png` | 凡例付きの描画画像（目視確認用） |
+
+> - 結果の形式は `jobs.status()` の `result_path`（`result.geojson` / `result.zip`）で判別できます。
+>   `jobs.wait` を zip のジョブに、`jobs.waitArchive` を GeoJSON のジョブに使うと `SateaisError` になります。
+> - 未完了のジョブに `jobs.resultArchive` を呼ぶと `SateaisApiError`（409 `JOB_NOT_COMPLETED`）になります。
+> - 処理時間は面積に応じて 15 分〜2 時間程度です。
+> - モデルは日本向けに学習されており、日本国外の結果は検証されていません。
 
 ### 例外
 

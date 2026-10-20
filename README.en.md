@@ -3,10 +3,11 @@
 [日本語](https://github.com/spaceshiftinc/sateais-js/blob/v0.2.0/README.md) | **English**
 
 The official JavaScript / TypeScript SDK for SateAIs. It provides async/await
-programmatic access to the SAR satellite image analysis APIs (ship detection,
-oil slick detection, new / disappeared building detection, and time-series change
-detection). The currently supported satellite is Sentinel-1, with additional
-satellites planned in future releases.
+programmatic access to the satellite image analysis APIs (ship detection,
+oil slick detection, new / disappeared building detection, time-series change
+detection, and land use / land cover classification). The currently supported
+satellite is Sentinel-1 (Sentinel-2 + Sentinel-1 for land use / land cover only),
+with additional satellites planned in future releases.
 
 ```bash
 npm install @sateais/sdk
@@ -72,8 +73,9 @@ Main options accepted by `new Client(options)`:
 | `client.analyze.newbuilding(...)` | `polygon`+`date_start`+`date_end` |
 | `client.analyze.disappearbuilding(...)` | Same as above |
 | `client.analyze.timeseries(...)` | Same as above |
+| `client.analyze.lulc(...)` | `polygon`+`month` |
 
-There are two input patterns:
+There are three input patterns:
 
 ```ts
 // scene_id family (ship / oilslick): scene ID, or polygon + a single date
@@ -94,9 +96,20 @@ await client.analyze.timeseries({
   date_end: "2026-05-01",
   orbit_direction: "ascending",       // optional
 });
+
+// polygon + base month family (lulc: land use / land cover)
+await client.analyze.lulc({
+  satellite_id: "sentinel-2",         // optional (always "sentinel-2" for lulc)
+  polygon: "POLYGON((...))",          // WKT; its bounding box is analysed
+  month: "2026-08",                   // last month of the 12-month period (even months only)
+});
 ```
 
-The currently supported `satellite_id` value is `"sentinel-1"`. The return value
+`satellite_id` is `"sentinel-1"` for every method except `lulc`, which uses
+`"sentinel-2"` (both are filled in automatically when omitted). `lulc` combines
+Sentinel-2 L2A and Sentinel-1 RTC imagery to classify every 10 m pixel into 15
+classes, and returns a zip archive instead of GeoJSON (see
+[Job management](#job-management)). The return value
 is a `JobCreateResponse` (`job_id` / `status` / `created_at`, etc.). See the
 [API reference](https://docs.spcsft.com/) for detailed parameters.
 
@@ -108,9 +121,15 @@ The `polygon` area and the date range have server-side limits (jobs exceeding th
 | --- | --- | --- |
 | `newbuilding` / `disappearbuilding` | 30000 km² | — |
 | `timeseries` | 50 km² | `date_start`–`date_end` within 3 years |
+| `lulc` | 0.5–350 km² (area of the **bounding box**) | `month` must be an even month, `2018-02` or later, and already ended |
 
 > `ship` / `oilslick` process a single scene, so they have no area limit. With `polygon`+`date`,
 > the nearest scene within ±14 days of `date` is selected automatically.
+>
+> `lulc` classifies and bills the **whole bounding box** of your polygon, not the polygon
+> itself. A long or diagonal polygon can have a small area but a large bounding box, so draw
+> AOIs close to a rectangle. The analysis period is the 12 months ending with `month`
+> (`"2026-08"` analyses 2025-09-01 to 2026-08-31).
 
 ### Pre-submission preview
 
@@ -139,6 +158,8 @@ console.log(preview.warnings);           // warnings such as LOW_AOI_COVERAGE
 >   estimated: `credits.estimated` is `null` (with `CREDITS_NOT_ESTIMABLE` in `warnings`).
 > - Actual consumption never exceeds the estimate (the estimate is an upper bound).
 > - If the scene search fails or finds nothing, `coverage` is `null`.
+> - For `lulc`, `coverage` is always `null` because the whole bounding box is classified,
+>   and `area_sqkm` is the bounding-box area the job will be billed on.
 > - A successful preview does not guarantee submission will succeed (e.g. the
 >   concurrency limit may return 429).
 
@@ -161,6 +182,35 @@ const geojson = await client.jobs.wait(jobId, {
 > `jobs.wait` returns the result on `completed`, and throws `JobFailedError` to stop
 > polling on `failed` and other terminal statuses such as `cancelled` / `expired`
 > (including unknown statuses). `timeoutMs` is unlimited when omitted.
+
+#### Jobs that return a zip archive (lulc)
+
+`lulc` returns a zip archive instead of GeoJSON. Use `jobs.resultArchive` /
+`jobs.waitArchive` to get the archive as bytes (`Uint8Array`). Polling options and
+exceptions are the same as `jobs.wait`.
+
+```ts
+import { writeFile } from "node:fs/promises";
+
+const job = await client.analyze.lulc({ polygon: "POLYGON((...))", month: "2026-08" });
+const zip = await client.jobs.waitArchive(job.job_id); // poll until completion, then fetch the zip
+await writeFile("lulc.zip", zip);
+
+const zip2 = await client.jobs.resultArchive(jobId);    // zip of a completed job
+```
+
+| File in the archive | Description |
+| --- | --- |
+| `classes.tif` | Classified raster (`uint8`, single band, 10 m pixels in the AOI's UTM zone). Class IDs `1`–`15`, `0` = NoData. Colour map embedded |
+| `class_stats.json` | Pixel count, area (km²) and share of each class that occurs |
+| `legend.json` | ID, name (`name` in Japanese, `name_en` in English) and colour of all 15 classes |
+| `visual.png` | Rendered map with a legend, for a quick visual check |
+
+> - Tell the result format apart with `result_path` from `jobs.status()` (`result.geojson` / `result.zip`).
+>   Calling `jobs.wait` on a zip job, or `jobs.waitArchive` on a GeoJSON job, throws `SateaisError`.
+> - Calling `jobs.resultArchive` before the job completes throws `SateaisApiError` (409 `JOB_NOT_COMPLETED`).
+> - Runtime is roughly 15 minutes to 2 hours depending on the area.
+> - The model is built for Japan; results outside Japan have not been validated.
 
 ### Exceptions
 

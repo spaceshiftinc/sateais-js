@@ -67,6 +67,9 @@ export interface ApiClient {
   ): Promise<PreviewResponse>;
   getJob(jobId: string): Promise<JobStatusResponse>;
   getJobResult(jobId: string): Promise<GeoJSONResponse>;
+  // 結果が zip のジョブ（lulc）用。previewAnalysis と同じ理由でオプショナル。
+  // 未実装の実装で client.jobs.resultArchive / waitArchive を呼ぶと SateaisError
+  getJobResultArchive?(jobId: string): Promise<Uint8Array>;
 }
 ```
 
@@ -77,6 +80,7 @@ export interface ApiClient {
 - 非有限値を含むレスポンスの安全パース（文字列リテラルの外側の `NaN` / `Infinity` / `-Infinity` を `null` 置換。配列要素も対象。文字列値は破壊しない。Python 側 `float('nan')` / `float('inf')` 対策）
 - エラー envelope（`{ "error": { "code", "message" } }`）→ 例外へのマッピング（`code` は非文字列でも `String` 正規化）
 - 2xx でボディが非 JSON の場合は `ResponseParseError`（transport / パース層の問題）。`204` / `205` / 空ボディは正常な空応答として `undefined` を返す
+- 結果アーカイブ（`result.zip`）は JSON パースせず `arrayBuffer()` で読み、`Uint8Array` で返す。成功時のボディの読み方だけを差し替え、認証・タイムアウト・エラー envelope のマッピングは JSON と共通
 
 `Client` は `ApiClient` を受け取って動くため、テストでは Fake 実装を注入できます。
 
@@ -105,7 +109,18 @@ export interface ApiClient {
 
 投入前プレビュー（`client.preview.<name>()`）はリクエストボディが投入 API と完全に
 同一のため、検証ロジック（`buildSceneBody` / `buildPolygonPeriodBody`）を
-`AnalyzeResource` と `PreviewResource` で共有しています。
+`AnalyzeResource` と `PreviewResource` で共有しています。`lulc`（polygon + 基準月）は
+`buildLulcBody` で検証し、既定の `satellite_id` に `"sentinel-2"` を補完します
+（他エンドポイントの既定は `"sentinel-1"`）。
+
+## 結果形式（GeoJSON / zip）
+
+結果は既定で GeoJSON（`jobs.result` / `jobs.wait`）で、`lulc` のみ zip
+（`jobs.resultArchive` / `jobs.waitArchive`）です。`wait` の戻り値型を変えると
+破壊的変更になるため、形式ごとにメソッドを分けています。ポーリングは共通の
+`waitUntilCompleted` で行い、完了時の `result_path` の拡張子が要求と食い違う場合は
+結果を取りに行かず `SateaisError` で正しいメソッドを案内します（`result_path` が無い
+場合は要求どおりの形式で取得する）。
 
 ## 公開境界
 
@@ -117,6 +132,7 @@ export interface ApiClient {
 ## 新しいエンドポイントを追加する
 
 1. `types.ts` の `AnalysisEndpoint` 型に値を追加し、対応する検出パラメータ型を定義
+   （結果が GeoJSON でない場合は `jobs.resultArchive` / `waitArchive` で取得できるか確認）
 2. リクエストボディの検証ルール（必須パラメータの組合せ）が既存パターンで賄えるか確認
 3. `client.ts` の `AnalyzeResource` に検出メソッド（`client.analyze.<name>()`）を追加
 4. `client.ts` の `PreviewResource` にも同名メソッド（`client.preview.<name>()`）を追加
