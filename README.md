@@ -4,9 +4,9 @@
 
 SateAIs の公式 JavaScript / TypeScript SDK です。衛星画像の解析 API
 （船舶検出 / オイルスリック検出 / 新規・消失建物検出 / 時系列変化検出 /
-土地利用・土地被覆分類）に async/await でプログラムからアクセスできます。
-現在の対応衛星は Sentinel-1（土地利用・土地被覆分類のみ Sentinel-2 + Sentinel-1）で、
-今後順次拡張を予定しています。
+土地利用・土地被覆分類 / 盛土検知）に async/await でプログラムからアクセスできます。
+現在の対応衛星は Sentinel-1（土地利用・土地被覆分類は Sentinel-2 + Sentinel-1、
+盛土検知は Sentinel-2）で、今後順次拡張を予定しています。
 
 ```bash
 npm install @sateais/sdk
@@ -73,6 +73,7 @@ API キーが解決できない場合は `AuthenticationError` が送出され�
 | `client.analyze.disappearbuilding(...)` | 同上 |
 | `client.analyze.timeseries(...)` | 同上 |
 | `client.analyze.lulc(...)` | `polygon`+`month` |
+| `client.analyze.embankment(...)` | `polygon`+`date_start`+`date_end`（Sentinel-2） |
 
 入力パターンは 3 系統あります。
 
@@ -96,6 +97,14 @@ await client.analyze.timeseries({
   orbit_direction: "ascending",       // 任意
 });
 
+// polygon + 期間 系（embankment: 盛土検知、Sentinel-2 版）
+await client.analyze.embankment({
+  satellite_id: "sentinel-2",         // 任意（"sentinel-2" 固定）
+  polygon: "POLYGON((...))",          // WKT
+  date_start: "2025-05-01",
+  date_end: "2026-05-01",             // orbit_direction は指定不可
+});
+
 // polygon + 基準月 系（lulc: 土地利用・土地被覆分類）
 await client.analyze.lulc({
   satellite_id: "sentinel-2",         // 任意（lulc は "sentinel-2" 固定）
@@ -104,8 +113,9 @@ await client.analyze.lulc({
 });
 ```
 
-`satellite_id` は `lulc` 以外では `"sentinel-1"`、`lulc` では `"sentinel-2"` です
-（省略時はそれぞれ自動で補完されます）。`lulc` は Sentinel-2 L2A と Sentinel-1 RTC を
+`satellite_id` は `lulc` / `embankment` では `"sentinel-2"`、それ以外では `"sentinel-1"` です
+（省略時はそれぞれ自動で補完されます。`lulc` / `embankment` に他の値や `orbit_direction` を
+渡すと送信前に `ValidationError` になります）。`lulc` は Sentinel-2 L2A と Sentinel-1 RTC を
 併用して 10m 画素ごとに 15 クラスへ分類し、結果は GeoJSON ではなく zip で返ります
 （[ジョブ管理](#ジョブ管理) を参照）。戻り値は `JobCreateResponse`
 （`job_id` / `status` / `created_at` 等）。詳細パラメータは
@@ -120,6 +130,7 @@ await client.analyze.lulc({
 | `newbuilding` / `disappearbuilding` | 30000 km² | — |
 | `timeseries` | 50 km² | `date_start`〜`date_end` は 3 年以内 |
 | `lulc` | 0.5〜350 km²（**バウンディングボックス**の面積） | `month` は偶数月のみ・`2018-02` 以降・終了済みの月 |
+| `embankment` | 0.1〜12,500 km² | `date_start`〜`date_end` は最大 1,095 日（3 年） |
 
 > `ship` / `oilslick` は単一シーン処理のため面積上限はありません。`polygon`+`date` 指定時は
 > `date` を基準に ±14 日以内で最も近いシーンを自動選択します。
@@ -128,6 +139,19 @@ await client.analyze.lulc({
 > 細長い・斜めのポリゴンは面積が小さくてもバウンディングボックスが大きくなるため、
 > AOI は矩形に近い形で指定してください。解析期間は `month` で終わる 12 ヶ月です
 > （`"2026-08"` なら 2025-09-01〜2026-08-31）。
+
+#### 盛土検知（embankment）
+
+2 時期の Sentinel-2 画像を比べ、盛土（土地の嵩上げ）とみられる範囲をポリゴンで返します。
+結果は GeoJSON（properties は `area_sqm` / `confidence`）なので、他の検出と同じく
+`jobs.wait` / `jobs.result` で受け取れます。
+
+- 期間の両端付近から、AOI 内の雲が少ないシーンを 1 枚ずつ選んで比較します。
+- 解析するのは **Sentinel-2 タイル 1 枚分のみ** です。範囲がタイルをまたぐと、タイルの外側は
+  解析も課金もされません。解析された割合は完了後のジョブの `coverage` で分かり、
+  プレビューの見積もりもその範囲の面積で出ます。
+- SDK が対応しているのは **Sentinel-2 版のみ** です。API の ALOS-2 版
+  （`before_tif_id` + `after_tif_id`）は、SDK にアセットアップロード機能が無いため未対応です。
 
 ### 投入前プレビュー
 

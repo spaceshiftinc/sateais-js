@@ -110,8 +110,22 @@ export interface ApiClient {
 投入前プレビュー（`client.preview.<name>()`）はリクエストボディが投入 API と完全に
 同一のため、検証ロジック（`buildSceneBody` / `buildPolygonPeriodBody`）を
 `AnalyzeResource` と `PreviewResource` で共有しています。`lulc`（polygon + 基準月）は
-`buildLulcBody` で検証し、既定の `satellite_id` に `"sentinel-2"` を補完します
-（他エンドポイントの既定は `"sentinel-1"`）。
+`buildLulcBody`、`embankment`（polygon + 期間、Sentinel-2 版）は `buildEmbankmentBody` で
+検証します。
+
+解析種別ごとの衛星まわりの性質は `client.ts` の `ENDPOINT_TRAITS` 表にまとめ、
+エンドポイント名での分岐を各ビルダーに散らさないようにしています。
+
+| 性質 | 意味 | 該当 |
+| --- | --- | --- |
+| `fixedSatelliteId` | 衛星が固定。省略時はこの値を補完し、他の値は送信前に `ValidationError` | `lulc` / `embankment`（`"sentinel-2"`） |
+| `acceptsOrbitDirection` | `orbit_direction` を受け付けるか。`false` で指定されると `ValidationError` | Sentinel-1 系のみ `true` |
+
+`fixedSatelliteId` が無い種別は既定の `"sentinel-1"` を補完し、`satellite_id` の値は
+API 側の検証に任せます（従来どおり）。`embankment` は加えて、他の入力パターンの
+パラメータ（`scene_id` / `date` / `month` や ALOS-2 版の `before_tif_id` / `after_tif_id`）
+が混ざると `ValidationError` にします（ALOS-2 版は SDK にアセットアップロード機能が
+無いため未対応）。
 
 ## 結果形式（GeoJSON / zip）
 

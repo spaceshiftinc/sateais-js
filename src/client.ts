@@ -17,6 +17,7 @@ import { HttpApiClient } from "./http";
 import type { ApiClient } from "./http";
 import type {
   AnalysisEndpoint,
+  EmbankmentParams,
   GeoJSONResponse,
   JobCreateResponse,
   JobStatusResponse,
@@ -33,8 +34,94 @@ const DEFAULT_BASE_URL = "https://api.spcsft.com/api/v1";
 /** 既定の衛星種別 */
 const DEFAULT_SATELLITE_ID: SatelliteId = "sentinel-1";
 
-/** `lulc` の既定の衛星種別（API は polygon + month パターンでこの値を必須とする） */
-const LULC_SATELLITE_ID = "sentinel-2";
+/**
+ * 解析種別ごとの衛星まわりの性質
+ *
+ * エンドポイント名での分岐をビルダーに散らさないよう、種別の性質として表にまとめる
+ * （姉妹リポ `sateais-py` の `AnalysisType` の `fixed_satellite_id` /
+ * `accepts_orbit_direction` に対応）。
+ */
+interface EndpointTraits {
+  /**
+   * 衛星が固定の場合のその値。省略時はこの値を補完し、他の値は送信前に弾く。
+   * `undefined` なら既定の {@link DEFAULT_SATELLITE_ID} を補完し、値の検証は API に任せる。
+   */
+  readonly fixedSatelliteId?: "sentinel-2";
+  /** `orbit_direction` を受け付けるか（Sentinel-2 系は軌道の指定に意味が無いため `false`）。 */
+  readonly acceptsOrbitDirection: boolean;
+}
+
+/** 解析種別ごとの性質の表 */
+const ENDPOINT_TRAITS: Readonly<Record<AnalysisEndpoint, EndpointTraits>> = {
+  ship: { acceptsOrbitDirection: true },
+  oilslick: { acceptsOrbitDirection: true },
+  newbuilding: { acceptsOrbitDirection: true },
+  disappearbuilding: { acceptsOrbitDirection: true },
+  timeseries: { acceptsOrbitDirection: true },
+  lulc: { fixedSatelliteId: "sentinel-2", acceptsOrbitDirection: false },
+  embankment: { fixedSatelliteId: "sentinel-2", acceptsOrbitDirection: false },
+};
+
+/**
+ * `embankment` で受け付けない、他の入力パターンのパラメータ
+ *
+ * `before_tif_id` / `after_tif_id` は ALOS-2 版の入力だが、SDK にアセットアップロード
+ * 機能が無いため未対応として弾く。
+ */
+const EMBANKMENT_FOREIGN_FIELDS: readonly string[] = [
+  "scene_id",
+  "date",
+  "date_direction",
+  "month",
+  "before_tif_id",
+  "after_tif_id",
+];
+
+/** 送信前の検証エラーを生成する */
+const validationError = (message: string): ValidationError =>
+  new ValidationError({ code: "VALIDATION_ERROR", status: 400, message });
+
+/**
+ * 解析種別の性質に従って `satellite_id` / `orbit_direction` を検証し、
+ * 既定の `satellite_id` を補完したリクエストボディを構築する
+ *
+ * @param endpoint 解析種別
+ * @param label エラーメッセージ用のメソッド表記（`analyze.lulc` 等）
+ * @param params 必須パラメータの検証を済ませたパラメータ
+ * @throws {@link ValidationError} 固定衛星と異なる `satellite_id`、または
+ *   受け付けない `orbit_direction` が指定された場合
+ */
+const applyEndpointTraits = (
+  endpoint: AnalysisEndpoint,
+  label: string,
+  params: object,
+): Record<string, unknown> => {
+  const traits = ENDPOINT_TRAITS[endpoint];
+  const { orbit_direction: orbitDirection, ...rest } = params as Record<
+    string,
+    unknown
+  >;
+  const body: Record<string, unknown> = { ...rest };
+  if (traits.acceptsOrbitDirection) {
+    if (orbitDirection !== undefined) body.orbit_direction = orbitDirection;
+  } else if (orbitDirection != null) {
+    throw validationError(`${label} does not accept 'orbit_direction'`);
+  }
+  // 受け付けない種別では undefined / null の orbit_direction は送らない
+  const fixed = traits.fixedSatelliteId;
+  if (fixed === undefined) {
+    body.satellite_id = body.satellite_id ?? DEFAULT_SATELLITE_ID;
+    return body;
+  }
+  const satelliteId = body.satellite_id ?? fixed;
+  if (satelliteId !== fixed) {
+    throw validationError(
+      `${label} only supports satellite_id '${fixed}', got '${String(satelliteId)}'`,
+    );
+  }
+  body.satellite_id = fixed;
+  return body;
+};
 
 /** 環境変数から API キーを解決する（Node.js のみ。ブラウザでは undefined） */
 const resolveApiKeyFromEnv = (): string | undefined => {
@@ -85,11 +172,13 @@ const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set([
  * scene_id / polygon+date パターン（ship / oilslick）の必須組合せを検証し、
  * 既定の `satellite_id` を補完したリクエストボディを構築する
  *
+ * @param endpoint 解析種別（`ship` / `oilslick`）
  * @param label エラーメッセージ用のメソッド表記（`analyze.ship` / `preview.ship` 等）
  * @param params 検証対象のパラメータ
  * @throws {@link ValidationError} 必須パラメータの組合せが不正な場合
  */
 const buildSceneBody = (
+  endpoint: AnalysisEndpoint,
   label: string,
   params: SceneAnalyzeParams,
 ): Record<string, unknown> => {
@@ -97,41 +186,34 @@ const buildSceneBody = (
   const hasPolygonDate =
     "polygon" in params && !!params.polygon && !!params.date;
   if (!hasScene && !hasPolygonDate) {
-    throw new ValidationError({
-      code: "VALIDATION_ERROR",
-      status: 400,
-      message: `${label} requires either 'scene_id' or both 'polygon' and 'date'`,
-    });
+    throw validationError(
+      `${label} requires either 'scene_id' or both 'polygon' and 'date'`,
+    );
   }
-  return {
-    ...params,
-    satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
-  };
+  return applyEndpointTraits(endpoint, label, params);
 };
 
 /**
- * polygon + 期間パターン（newbuilding / disappearbuilding / timeseries）の必須
- * パラメータを検証し、既定の `satellite_id` を補完したリクエストボディを構築する
+ * polygon + 期間パターン（newbuilding / disappearbuilding / timeseries / embankment）の
+ * 必須パラメータを検証し、既定の `satellite_id` を補完したリクエストボディを構築する
  *
+ * @param endpoint 解析種別
  * @param label エラーメッセージ用のメソッド表記（`analyze.timeseries` 等）
  * @param params 検証対象のパラメータ
- * @throws {@link ValidationError} 必須パラメータが欠けている場合
+ * @throws {@link ValidationError} 必須パラメータが欠けている、または解析種別の性質に
+ *   合わない `satellite_id` / `orbit_direction` が指定された場合
  */
 const buildPolygonPeriodBody = (
+  endpoint: AnalysisEndpoint,
   label: string,
-  params: PolygonPeriodParams,
+  params: PolygonPeriodParams | EmbankmentParams,
 ): Record<string, unknown> => {
   if (!params.polygon || !params.date_start || !params.date_end) {
-    throw new ValidationError({
-      code: "VALIDATION_ERROR",
-      status: 400,
-      message: `${label} requires 'polygon', 'date_start', and 'date_end'`,
-    });
+    throw validationError(
+      `${label} requires 'polygon', 'date_start', and 'date_end'`,
+    );
   }
-  return {
-    ...params,
-    satellite_id: params.satellite_id ?? DEFAULT_SATELLITE_ID,
-  };
+  return applyEndpointTraits(endpoint, label, params);
 };
 
 /**
@@ -142,23 +224,45 @@ const buildPolygonPeriodBody = (
  *
  * @param label エラーメッセージ用のメソッド表記（`analyze.lulc` / `preview.lulc`）
  * @param params 検証対象のパラメータ
- * @throws {@link ValidationError} 必須パラメータが欠けている場合
+ * @throws {@link ValidationError} 必須パラメータが欠けている、`satellite_id` が
+ *   `"sentinel-2"` 以外、または `orbit_direction` が指定された場合
  */
 const buildLulcBody = (
   label: string,
   params: LulcParams,
 ): Record<string, unknown> => {
   if (!params.polygon || !params.month) {
-    throw new ValidationError({
-      code: "VALIDATION_ERROR",
-      status: 400,
-      message: `${label} requires 'polygon' and 'month'`,
-    });
+    throw validationError(`${label} requires 'polygon' and 'month'`);
   }
-  return {
-    ...params,
-    satellite_id: params.satellite_id ?? LULC_SATELLITE_ID,
-  };
+  return applyEndpointTraits("lulc", label, params);
+};
+
+/**
+ * 盛土検知（embankment, Sentinel-2 版）の必須パラメータを検証し、既定の
+ * `satellite_id`（`"sentinel-2"`）を補完したリクエストボディを構築する
+ *
+ * polygon + 期間パターンの検証に加え、他の入力パターンのパラメータ
+ * （{@link EMBANKMENT_FOREIGN_FIELDS}）の混入を弾く。期間・面積の上限は API 側で判定する。
+ *
+ * @param label エラーメッセージ用のメソッド表記（`analyze.embankment` / `preview.embankment`）
+ * @param params 検証対象のパラメータ
+ * @throws {@link ValidationError} 必須パラメータが欠けている、`satellite_id` が
+ *   `"sentinel-2"` 以外、`orbit_direction` や他パターンのパラメータが指定された場合
+ */
+const buildEmbankmentBody = (
+  label: string,
+  params: EmbankmentParams,
+): Record<string, unknown> => {
+  const given = params as unknown as Record<string, unknown>;
+  const foreign = EMBANKMENT_FOREIGN_FIELDS.filter(
+    (field) => given[field] != null,
+  );
+  if (foreign.length > 0) {
+    throw validationError(
+      `${label} does not accept ${foreign.map((f) => `'${f}'`).join(", ")} (only 'polygon', 'date_start', 'date_end' for Sentinel-2; the ALOS-2 tif_id input is not supported by this SDK)`,
+    );
+  }
+  return buildPolygonPeriodBody("embankment", label, params);
 };
 
 /**
@@ -180,7 +284,7 @@ export class AnalyzeResource {
   ship(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
     return this.api.submitAnalysis(
       "ship",
-      buildSceneBody("analyze.ship", params),
+      buildSceneBody("ship", "analyze.ship", params),
     );
   }
 
@@ -194,7 +298,7 @@ export class AnalyzeResource {
   oilslick(params: SceneAnalyzeParams): Promise<JobCreateResponse> {
     return this.api.submitAnalysis(
       "oilslick",
-      buildSceneBody("analyze.oilslick", params),
+      buildSceneBody("oilslick", "analyze.oilslick", params),
     );
   }
 
@@ -210,7 +314,7 @@ export class AnalyzeResource {
   newbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
     return this.api.submitAnalysis(
       "newbuilding",
-      buildPolygonPeriodBody("analyze.newbuilding", params),
+      buildPolygonPeriodBody("newbuilding", "analyze.newbuilding", params),
     );
   }
 
@@ -226,7 +330,11 @@ export class AnalyzeResource {
   disappearbuilding(params: PolygonPeriodParams): Promise<JobCreateResponse> {
     return this.api.submitAnalysis(
       "disappearbuilding",
-      buildPolygonPeriodBody("analyze.disappearbuilding", params),
+      buildPolygonPeriodBody(
+        "disappearbuilding",
+        "analyze.disappearbuilding",
+        params,
+      ),
     );
   }
 
@@ -243,7 +351,7 @@ export class AnalyzeResource {
   timeseries(params: PolygonPeriodParams): Promise<JobCreateResponse> {
     return this.api.submitAnalysis(
       "timeseries",
-      buildPolygonPeriodBody("analyze.timeseries", params),
+      buildPolygonPeriodBody("timeseries", "analyze.timeseries", params),
     );
   }
 
@@ -265,6 +373,30 @@ export class AnalyzeResource {
     return this.api.submitAnalysis(
       "lulc",
       buildLulcBody("analyze.lulc", params),
+    );
+  }
+
+  /**
+   * 盛土検知ジョブを投入する（`embankment`、Sentinel-2 版）
+   *
+   * 期間の両端付近から AOI 内の雲が少ない Sentinel-2 シーンを 1 枚ずつ選んで比較し、
+   * 盛土とみられる範囲をポリゴンで返す。`polygon` の面積は 0.1〜12,500km²、期間は
+   * 最大 1,095 日（いずれも違反時は API が `ValidationError`）。解析・課金されるのは
+   * Sentinel-2 タイル 1 枚分のみで、その割合は完了後のジョブの `coverage` で分かる。
+   *
+   * 結果は GeoJSON（properties は `area_sqm` / `confidence`）のため、
+   * {@link JobsResource.wait} / {@link JobsResource.result} で取得する。
+   * ALOS-2 版（`before_tif_id` + `after_tif_id`）は未対応。
+   *
+   * @param params polygon（WKT）と比較期間（`date_start` / `date_end`）
+   * @returns 投入されたジョブの情報（`job_id` を含む）
+   * @throws {@link ValidationError} 必須パラメータが欠けている、`satellite_id` が
+   *   `"sentinel-2"` 以外、`orbit_direction` 等の受け付けないパラメータが指定された場合
+   */
+  embankment(params: EmbankmentParams): Promise<JobCreateResponse> {
+    return this.api.submitAnalysis(
+      "embankment",
+      buildEmbankmentBody("analyze.embankment", params),
     );
   }
 }
@@ -295,7 +427,10 @@ export class PreviewResource {
    * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
    */
   ship(params: SceneAnalyzeParams): Promise<PreviewResponse> {
-    return this.dispatch("ship", buildSceneBody("preview.ship", params));
+    return this.dispatch(
+      "ship",
+      buildSceneBody("ship", "preview.ship", params),
+    );
   }
 
   /**
@@ -307,7 +442,7 @@ export class PreviewResource {
   oilslick(params: SceneAnalyzeParams): Promise<PreviewResponse> {
     return this.dispatch(
       "oilslick",
-      buildSceneBody("preview.oilslick", params),
+      buildSceneBody("oilslick", "preview.oilslick", params),
     );
   }
 
@@ -320,7 +455,7 @@ export class PreviewResource {
   newbuilding(params: PolygonPeriodParams): Promise<PreviewResponse> {
     return this.dispatch(
       "newbuilding",
-      buildPolygonPeriodBody("preview.newbuilding", params),
+      buildPolygonPeriodBody("newbuilding", "preview.newbuilding", params),
     );
   }
 
@@ -333,7 +468,11 @@ export class PreviewResource {
   disappearbuilding(params: PolygonPeriodParams): Promise<PreviewResponse> {
     return this.dispatch(
       "disappearbuilding",
-      buildPolygonPeriodBody("preview.disappearbuilding", params),
+      buildPolygonPeriodBody(
+        "disappearbuilding",
+        "preview.disappearbuilding",
+        params,
+      ),
     );
   }
 
@@ -346,7 +485,7 @@ export class PreviewResource {
   timeseries(params: PolygonPeriodParams): Promise<PreviewResponse> {
     return this.dispatch(
       "timeseries",
-      buildPolygonPeriodBody("preview.timeseries", params),
+      buildPolygonPeriodBody("timeseries", "preview.timeseries", params),
     );
   }
 
@@ -361,6 +500,22 @@ export class PreviewResource {
    */
   lulc(params: LulcParams): Promise<PreviewResponse> {
     return this.dispatch("lulc", buildLulcBody("preview.lulc", params));
+  }
+
+  /**
+   * 盛土検知（`embankment`、Sentinel-2 版）の投入前プレビューを取得する
+   *
+   * 投入時と同じシーン検索・タイルの選び方で解析される範囲を推定し、見積もりは
+   * その面積で出す（範囲がタイルをまたぐと `coverage.ratio` が 1 を下回る）。
+   *
+   * @param params 検出メソッド {@link AnalyzeResource.embankment} と同じパラメータ
+   * @returns 見積もり結果（`credits` / `coverage` / `warnings`）
+   */
+  embankment(params: EmbankmentParams): Promise<PreviewResponse> {
+    return this.dispatch(
+      "embankment",
+      buildEmbankmentBody("preview.embankment", params),
+    );
   }
 
   /**
