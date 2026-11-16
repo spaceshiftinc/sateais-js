@@ -12,13 +12,14 @@ export type AnalysisEndpoint =
   | "newbuilding"
   | "disappearbuilding"
   | "timeseries"
-  | "lulc";
+  | "lulc"
+  | "embankment";
 
 /**
  * 衛星種別（Sentinel-1 SAR 検出用）
  *
- * `lulc` は Sentinel-2 + Sentinel-1 を併用するため別型（{@link LulcParams} の
- * `satellite_id`）で扱う。
+ * `lulc` / `embankment` は Sentinel-2 を使うため別型（{@link LulcParams} /
+ * {@link EmbankmentParams} の `satellite_id`）で扱う。
  */
 export type SatelliteId = "sentinel-1";
 
@@ -114,6 +115,31 @@ export interface LulcParams {
   polygon: string;
   /** 12 ヶ月の解析期間の最終月（`YYYY-MM`、偶数月のみ）。 */
   month: string;
+}
+
+/**
+ * `embankment`（盛土検知）のリクエストパラメータ（Sentinel-2 版）
+ *
+ * polygon + 期間パターンのみ。期間の両端付近から AOI 内の雲が少ない Sentinel-2 L2A
+ * シーンを 1 枚ずつ選び、2 時期を比較して盛土とみられる範囲をポリゴンで返す。
+ *
+ * - `polygon` の面積は 0.1〜12,500km²、期間は最大 1,095 日（3 年）（違反時は API が `ValidationError`）
+ * - 解析するのは Sentinel-2 タイル 1 枚分のみ。範囲がタイルをまたぐと外側は解析も課金もされず、
+ *   その割合は `coverage` で分かる
+ * - Sentinel-2 のため `orbit_direction` は受け付けない（指定すると SDK が `ValidationError`）
+ * - ALOS-2 版（`before_tif_id` + `after_tif_id`）は SDK では未対応
+ * - 結果は GeoJSON（properties は `area_sqm` / `confidence`）で、`client.jobs.wait()` /
+ *   `client.jobs.result()` で取得する
+ */
+export interface EmbankmentParams {
+  /** 衛星種別。省略時は `"sentinel-2"`（Sentinel-2 版は `"sentinel-2"` 固定）。 */
+  satellite_id?: "sentinel-2";
+  /** AOI ポリゴン（WKT, EPSG:4326）。 */
+  polygon: string;
+  /** 比較期間の開始日（`YYYY-MM-DD`）。この付近から before のシーンを選ぶ。 */
+  date_start: string;
+  /** 比較期間の終了日（`YYYY-MM-DD`）。この付近から after のシーンを選ぶ。 */
+  date_end: string;
 }
 
 /**

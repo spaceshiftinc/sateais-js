@@ -10,7 +10,9 @@
 
 - SDK: 土地利用・土地被覆分類 `client.analyze.lulc(...)` / `client.preview.lulc(...)` を追加（`POST /analyze/lulc`）。Sentinel-2 + Sentinel-1 の 12 ヶ月分の画像から polygon のバウンディングボックスを 15 クラスに分類する。入力は `polygon` + `month`（`YYYY-MM`、偶数月のみ）で、`satellite_id` は省略時 `"sentinel-2"` を補完する
 - SDK: 結果が zip のジョブ用に `client.jobs.resultArchive(jobId)` / `client.jobs.waitArchive(jobId, options)` を追加（`GET /jobs/{job_id}/result.zip`、戻り値は `Uint8Array`）
-- 型: `LulcParams` を追加。`AnalysisEndpoint` に `"lulc"` を追加
+- SDK: 盛土検知 `client.analyze.embankment(...)` / `client.preview.embankment(...)` を追加（`POST /analyze/embankment`、Sentinel-2 版のみ）。入力は `polygon` + `date_start` + `date_end` で、`satellite_id` は省略時 `"sentinel-2"` を補完する。結果は GeoJSON（properties は `area_sqm` / `confidence`）で `client.jobs.wait()` / `result()` で取得する。ALOS-2 版（`before_tif_id` + `after_tif_id`）は SDK にアセットアップロード機能が無いため未対応
+- 型: `LulcParams` / `EmbankmentParams` を追加。`AnalysisEndpoint` に `"lulc"` / `"embankment"` を追加
+- `lulc` / `embankment` は送信前に `satellite_id` が `"sentinel-2"` 以外、または `orbit_direction` が指定されていると `ValidationError` を送出する。`embankment` は他の入力パターンのパラメータ（`scene_id` / `date` / `date_direction` / `month` / `before_tif_id` / `after_tif_id`）の混入も弾く
 - `ApiClient` interface に**オプショナル**メソッド `getJobResultArchive?()` を追加（後方互換。既存の独自実装・テスト用 Fake はそのまま動作する）。未実装の `ApiClient` で `client.jobs.resultArchive()` / `waitArchive()` を呼んだ場合は `SateaisError` を送出する
 
 ### Changed

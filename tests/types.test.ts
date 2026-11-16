@@ -117,20 +117,116 @@ describe.each(["analyze", "preview"] as const)(
       ).toThrow(ValidationError);
     });
 
-    it("satellite_id に sentinel-1 は型で拒否される", () => {
+    it("satellite_id に sentinel-1 は型で拒否され、実行時も ValidationError", () => {
+      const { client, fake } = makeClient();
+      expect(() =>
+        client[resource].lulc({
+          polygon: "POLYGON((0 0))",
+          month: "2026-08",
+          // @ts-expect-error lulc の satellite_id は "sentinel-2" のみ
+          satellite_id: "sentinel-1",
+        }),
+      ).toThrow(ValidationError);
+      expect(fake.submitAnalysis).not.toHaveBeenCalled();
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    });
+
+    it("orbit_direction を指定すると ValidationError", () => {
       const { client } = makeClient();
-      client[resource].lulc({
-        polygon: "POLYGON((0 0))",
-        month: "2026-08",
-        // @ts-expect-error lulc の satellite_id は "sentinel-2" のみ
-        satellite_id: "sentinel-1",
-      });
+      expect(() =>
+        client[resource].lulc({
+          polygon: "POLYGON((0 0))",
+          month: "2026-08",
+          // @ts-expect-error lulc は orbit_direction を受け付けない
+          orbit_direction: "ascending",
+        }),
+      ).toThrow(ValidationError);
+    });
+  },
+);
+
+describe.each(["analyze", "preview"] as const)(
+  "検証: %s — embankment（polygon+期間、Sentinel-2 版）",
+  (resource) => {
+    const BASE = {
+      polygon: "POLYGON((0 0))",
+      date_start: "2025-05-01",
+      date_end: "2026-05-01",
+    };
+
+    it.each(["polygon", "date_start", "date_end"] as const)(
+      "%s が無いと ValidationError",
+      (field) => {
+        const { client, fake } = makeClient();
+        const { [field]: _omitted, ...rest } = BASE;
+        expect(() =>
+          // @ts-expect-error 必須パラメータ欠落（実行時検証の対象）
+          client[resource].embankment(rest),
+        ).toThrow(ValidationError);
+        expect(fake.submitAnalysis).not.toHaveBeenCalled();
+        expect(fake.previewAnalysis).not.toHaveBeenCalled();
+      },
+    );
+
+    it("satellite_id に sentinel-1 は型で拒否され、実行時も ValidationError", () => {
+      const { client, fake } = makeClient();
+      expect(() =>
+        client[resource].embankment({
+          ...BASE,
+          // @ts-expect-error embankment の satellite_id は "sentinel-2" のみ
+          satellite_id: "sentinel-1",
+        }),
+      ).toThrow(ValidationError);
+      expect(fake.submitAnalysis).not.toHaveBeenCalled();
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    });
+
+    it("orbit_direction を指定すると ValidationError", () => {
+      const { client, fake } = makeClient();
+      expect(() =>
+        client[resource].embankment({
+          ...BASE,
+          // @ts-expect-error embankment は orbit_direction を受け付けない
+          orbit_direction: "ascending",
+        }),
+      ).toThrow(/orbit_direction/);
+      expect(fake.submitAnalysis).not.toHaveBeenCalled();
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["scene_id", "S1A_xxx"],
+      ["date", "2026-01-01"],
+      ["date_direction", "nearest"],
+      ["month", "2026-08"],
+      ["before_tif_id", "d38fe8c2-3258-4924-a13a-d2a63de576ca"],
+      ["after_tif_id", "5b1f7a0e-8c1d-4a51-9a39-0f3e2a7c9b14"],
+    ])("%s を混ぜると ValidationError", (field, value) => {
+      const { client, fake } = makeClient();
+      const params = { ...BASE, [field]: value };
+      expect(() => client[resource].embankment(params)).toThrow(
+        ValidationError,
+      );
+      expect(fake.submitAnalysis).not.toHaveBeenCalled();
+      expect(fake.previewAnalysis).not.toHaveBeenCalled();
+    });
+
+    it("orbit_direction が undefined ならエラーにせずボディから除く", async () => {
+      const { client, fake } = makeClient();
+      const params = { ...BASE, orbit_direction: undefined };
+      await client[resource].embankment(params);
+      const call =
+        resource === "analyze"
+          ? fake.submitAnalysis.mock.calls[0]
+          : fake.previewAnalysis.mock.calls[0];
+      expect(call?.[1]).toEqual({ ...BASE, satellite_id: "sentinel-2" });
+      expect(call?.[1]).not.toHaveProperty("orbit_direction");
     });
   },
 );
 
 describe("型: public API の判別・戻り値型", () => {
-  it("AnalysisEndpoint は 6 種の文字列リテラル", () => {
+  it("AnalysisEndpoint は 7 種の文字列リテラル", () => {
     expectTypeOf<AnalysisEndpoint>().toEqualTypeOf<
       | "ship"
       | "oilslick"
@@ -138,6 +234,7 @@ describe("型: public API の判別・戻り値型", () => {
       | "disappearbuilding"
       | "timeseries"
       | "lulc"
+      | "embankment"
     >();
   });
 
@@ -152,6 +249,9 @@ describe("型: public API の判別・戻り値型", () => {
     expectTypeOf(
       client.analyze.lulc,
     ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
+    expectTypeOf(
+      client.analyze.embankment,
+    ).returns.resolves.toEqualTypeOf<JobCreateResponse>();
   });
 
   it("プレビューメソッドの戻り値は Promise<PreviewResponse>", () => {
@@ -164,6 +264,9 @@ describe("型: public API の判別・戻り値型", () => {
     ).returns.resolves.toEqualTypeOf<PreviewResponse>();
     expectTypeOf(
       client.preview.lulc,
+    ).returns.resolves.toEqualTypeOf<PreviewResponse>();
+    expectTypeOf(
+      client.preview.embankment,
     ).returns.resolves.toEqualTypeOf<PreviewResponse>();
   });
 

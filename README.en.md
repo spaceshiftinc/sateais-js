@@ -5,9 +5,10 @@
 The official JavaScript / TypeScript SDK for SateAIs. It provides async/await
 programmatic access to the satellite image analysis APIs (ship detection,
 oil slick detection, new / disappeared building detection, time-series change
-detection, and land use / land cover classification). The currently supported
-satellite is Sentinel-1 (Sentinel-2 + Sentinel-1 for land use / land cover only),
-with additional satellites planned in future releases.
+detection, land use / land cover classification, and embankment detection). The
+currently supported satellite is Sentinel-1 (Sentinel-2 + Sentinel-1 for land use /
+land cover, and Sentinel-2 for embankment detection), with additional satellites
+planned in future releases.
 
 ```bash
 npm install @sateais/sdk
@@ -74,6 +75,7 @@ Main options accepted by `new Client(options)`:
 | `client.analyze.disappearbuilding(...)` | Same as above |
 | `client.analyze.timeseries(...)` | Same as above |
 | `client.analyze.lulc(...)` | `polygon`+`month` |
+| `client.analyze.embankment(...)` | `polygon`+`date_start`+`date_end` (Sentinel-2) |
 
 There are three input patterns:
 
@@ -97,6 +99,14 @@ await client.analyze.timeseries({
   orbit_direction: "ascending",       // optional
 });
 
+// polygon + date range family (embankment: embankment detection, Sentinel-2 version)
+await client.analyze.embankment({
+  satellite_id: "sentinel-2",         // optional (always "sentinel-2")
+  polygon: "POLYGON((...))",          // WKT
+  date_start: "2025-05-01",
+  date_end: "2026-05-01",             // orbit_direction is not accepted
+});
+
 // polygon + base month family (lulc: land use / land cover)
 await client.analyze.lulc({
   satellite_id: "sentinel-2",         // optional (always "sentinel-2" for lulc)
@@ -105,8 +115,9 @@ await client.analyze.lulc({
 });
 ```
 
-`satellite_id` is `"sentinel-1"` for every method except `lulc`, which uses
-`"sentinel-2"` (both are filled in automatically when omitted). `lulc` combines
+`satellite_id` is `"sentinel-2"` for `lulc` / `embankment` and `"sentinel-1"` for every
+other method (filled in automatically when omitted; passing any other value or
+`orbit_direction` to `lulc` / `embankment` raises `ValidationError` before sending). `lulc` combines
 Sentinel-2 L2A and Sentinel-1 RTC imagery to classify every 10 m pixel into 15
 classes, and returns a zip archive instead of GeoJSON (see
 [Job management](#job-management)). The return value
@@ -122,6 +133,7 @@ The `polygon` area and the date range have server-side limits (jobs exceeding th
 | `newbuilding` / `disappearbuilding` | 30000 km² | — |
 | `timeseries` | 50 km² | `date_start`–`date_end` within 3 years |
 | `lulc` | 0.5–350 km² (area of the **bounding box**) | `month` must be an even month, `2018-02` or later, and already ended |
+| `embankment` | 0.1–12,500 km² | `date_start`–`date_end` up to 1,095 days (3 years) |
 
 > `ship` / `oilslick` process a single scene, so they have no area limit. With `polygon`+`date`,
 > the nearest scene within ±14 days of `date` is selected automatically.
@@ -130,6 +142,20 @@ The `polygon` area and the date range have server-side limits (jobs exceeding th
 > itself. A long or diagonal polygon can have a small area but a large bounding box, so draw
 > AOIs close to a rectangle. The analysis period is the 12 months ending with `month`
 > (`"2026-08"` analyses 2025-09-01 to 2026-08-31).
+
+#### Embankment detection (embankment)
+
+Compares Sentinel-2 imagery from two dates and returns the areas that look like
+embankments (raised ground) as polygons. The result is GeoJSON (properties are
+`area_sqm` / `confidence`), so you receive it with `jobs.wait` / `jobs.result` like the
+other detections.
+
+- One low-cloud scene is picked near each end of the date range and the two are compared.
+- Only **one Sentinel-2 tile** is analysed. If your AOI spans several tiles, the part
+  outside the chosen tile is neither analysed nor billed. The analysed fraction is reported
+  in the completed job's `coverage`, and the preview estimate is based on that area too.
+- The SDK supports **only the Sentinel-2 version**. The API's ALOS-2 version
+  (`before_tif_id` + `after_tif_id`) is not supported because the SDK has no asset upload.
 
 ### Pre-submission preview
 

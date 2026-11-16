@@ -1,7 +1,7 @@
 /**
  * `@sateais/sdk` エントリポイント
  *
- * SateAIs REST API（Sentinel-1 SAR 検出・Sentinel-2 土地被覆分類）の TypeScript SDK。
+ * SateAIs REST API（Sentinel-1 SAR 検出・Sentinel-2 土地被覆分類 / 盛土検知）の TypeScript SDK。
  */
 
 export {
@@ -40,6 +40,7 @@ export type {
   SceneAnalyzeParams,
   PolygonPeriodParams,
   LulcParams,
+  EmbankmentParams,
   JobCreateResponse,
   JobStatusResponse,
   CoverageMethod,

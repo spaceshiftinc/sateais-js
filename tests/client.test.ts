@@ -59,6 +59,14 @@ const LULC_PARAMS = {
   month: "2026-08",
 };
 
+/** embankment（Sentinel-2 版）の検出パラメータ */
+const EMBANKMENT_PARAMS = {
+  polygon:
+    "POLYGON((136.85 35.10,136.95 35.10,136.95 35.18,136.85 35.18,136.85 35.10))",
+  date_start: "2025-05-01",
+  date_end: "2026-05-01",
+};
+
 const PREVIEW = makePreviewResponse();
 
 /** @types/node に依存せず process.env を参照する（src と同じ方針） */
@@ -230,6 +238,25 @@ describe("検出メソッド（Fake ApiClient）", () => {
     });
   });
 
+  it("embankment: polygon + 期間のボディに satellite_id=sentinel-2 を補完して送る", async () => {
+    await client.analyze.embankment(EMBANKMENT_PARAMS);
+    expect(fake.submitAnalysis).toHaveBeenCalledWith("embankment", {
+      ...EMBANKMENT_PARAMS,
+      satellite_id: "sentinel-2",
+    });
+  });
+
+  it("embankment: satellite_id=sentinel-2 の明示指定はそのまま送る", async () => {
+    await client.analyze.embankment({
+      ...EMBANKMENT_PARAMS,
+      satellite_id: "sentinel-2",
+    });
+    expect(fake.submitAnalysis).toHaveBeenCalledWith("embankment", {
+      ...EMBANKMENT_PARAMS,
+      satellite_id: "sentinel-2",
+    });
+  });
+
   it("レスポンスが JobCreateResponse として返る", async () => {
     const res = await client.analyze.ship({ scene_id: "S1A_xxx" });
     expect(res.job_id).toBe("j1");
@@ -292,6 +319,15 @@ describe("プレビューメソッド（Fake ApiClient）", () => {
     await client.preview.lulc(LULC_PARAMS);
     expect(fake.previewAnalysis).toHaveBeenCalledWith("lulc", {
       ...LULC_PARAMS,
+      satellite_id: "sentinel-2",
+    });
+    expect(fake.submitAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("preview.embankment: polygon + 期間のボディを送る（ジョブは投入しない）", async () => {
+    await client.preview.embankment(EMBANKMENT_PARAMS);
+    expect(fake.previewAnalysis).toHaveBeenCalledWith("embankment", {
+      ...EMBANKMENT_PARAMS,
       satellite_id: "sentinel-2",
     });
     expect(fake.submitAnalysis).not.toHaveBeenCalled();
